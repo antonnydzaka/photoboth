@@ -878,7 +878,7 @@ export default function PhotoBooth() {
                                 <canvas
                                     ref={canvasRef}
                                     style={{
-                                        width: 290, height: 760, borderRadius: 18,
+                                        width: 200, height: 600, borderRadius: 14,
                                         boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
                                         display: "block",
                                         cursor: mode === "decorate" ? "pointer" : "default",
@@ -894,11 +894,11 @@ export default function PhotoBooth() {
                             {allPhotosTaken && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                     <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>🎬 Video</div>
-                                    <div style={{ position: "relative", width: 290, height: 760 }}>
+                                    <div style={{ position: "relative", width: 200, height: 600 }}>
                                         <canvas
                                             ref={videoPreviewCanvasRef}
                                             style={{
-                                                width: 290, height: 760, borderRadius: 18,
+                                                width: 200, height: 600, borderRadius: 14,
                                                 boxShadow: "0 10px 30px rgba(255,122,162,0.25)",
                                                 display: "block",
                                             }}
