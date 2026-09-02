@@ -16,6 +16,7 @@ const SLOT_HEIGHT = 599;
 export default function PhotoBooth() {
     const webcamRef = useRef(null);
     const canvasRef = useRef(null);
+    const dupCanvasRef = useRef(null); // Second canvas for duplicated photo preview
     const videoPreviewCanvasRef = useRef(null);
     const frameImgRef = useRef(null);
     const mediaRecorderRef = useRef(null);
@@ -101,6 +102,15 @@ export default function PhotoBooth() {
         });
 
         ctx.drawImage(frameImgRef.current, 0, 0, frameWidth, frameHeight);
+
+        // Draw to duplicate canvas
+        const dupCanvas = dupCanvasRef.current;
+        if (dupCanvas) {
+            dupCanvas.width = frameWidth;
+            dupCanvas.height = frameHeight;
+            const dupCtx = dupCanvas.getContext("2d");
+            dupCtx.drawImage(canvas, 0, 0);
+        }
     };
 
     useEffect(drawCanvas, [photos, photoCount]);
@@ -515,15 +525,16 @@ export default function PhotoBooth() {
 
         setVideoPreviewReady(true);
 
-        // Animate single video strip preview
+        // Animate dual video strip preview
         const previewCanvas = videoPreviewCanvasRef.current;
         if (!previewCanvas) return;
-        previewCanvas.width = canvasWidth;
+        previewCanvas.width = canvasWidth * 2;
         previewCanvas.height = canvasHeight;
         const ctx = previewCanvas.getContext('2d');
 
         const animate = () => {
-            drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg);
+            drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, 0);
+            drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, canvasWidth);
             videoPreviewAnimRef.current = requestAnimationFrame(animate);
         };
         videoPreviewAnimRef.current = requestAnimationFrame(animate);
@@ -919,34 +930,49 @@ export default function PhotoBooth() {
 
                         {/* RIGHT PANEL: foto strip + video preview */}
                         <div style={{ display: "flex", flexDirection: "row", gap: 16, alignItems: "flex-start" }}>
-                            {/* Photo strip canvas */}
+                            {/* Photo strip canvas (Duplicated view) */}
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                 <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>📸 Foto</div>
-                                <canvas
-                                    ref={canvasRef}
-                                    style={{
-                                        width: 290, height: 760, borderRadius: 14,
-                                        boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
-                                        display: "block",
-                                        cursor: mode === "decorate" ? "pointer" : "default",
-                                        outline: showRetakeButton ? "3px solid #ff7aa2" : "none",
-                                    }}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUp}
-                                />
+                                <div style={{ 
+                                    display: "flex", 
+                                    boxShadow: "0 10px 30px rgba(0,0,0,0.15)", 
+                                    borderRadius: 14, 
+                                    overflow: "hidden",
+                                    outline: showRetakeButton ? "3px solid #ff7aa2" : "none",
+                                }}>
+                                    <canvas
+                                        ref={canvasRef}
+                                        style={{
+                                            width: 290, height: 760,
+                                            display: "block",
+                                            cursor: mode === "decorate" ? "pointer" : "default",
+                                        }}
+                                        onMouseDown={handleMouseDown}
+                                        onMouseMove={handleMouseMove}
+                                        onMouseUp={handleMouseUp}
+                                    />
+                                    {mode === "decorate" && (
+                                        <canvas
+                                            ref={dupCanvasRef}
+                                            style={{
+                                                width: 290, height: 760,
+                                                display: "block",
+                                                borderLeft: "1px dashed rgba(255,122,162,0.3)",
+                                            }}
+                                        />
+                                    )}
+                                </div>
                             </div>
 
-                            {/* Video preview (single strip) */}
+                            {/* Video preview (dual strip) */}
                             {allPhotosTaken && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                     <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>🎬 Video</div>
-                                    <div style={{ position: "relative", width: 290, height: 760 }}>
+                                    <div style={{ position: "relative", width: 580, height: 760, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
                                         <canvas
                                             ref={videoPreviewCanvasRef}
                                             style={{
-                                                width: 290, height: 760, borderRadius: 14,
-                                                boxShadow: "0 10px 30px rgba(255,122,162,0.25)",
+                                                width: 580, height: 760,
                                                 display: "block",
                                             }}
                                         />
@@ -954,7 +980,7 @@ export default function PhotoBooth() {
                                             <div style={{
                                                 position: "absolute", inset: 0, display: "flex",
                                                 alignItems: "center", justifyContent: "center",
-                                                background: "rgba(255,255,255,0.85)", borderRadius: 14,
+                                                background: "rgba(255,255,255,0.85)",
                                                 fontSize: 16, color: "#8c5b4a", fontWeight: "bold",
                                             }}>
                                                 ⏳ Loading...
