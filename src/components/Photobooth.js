@@ -27,7 +27,7 @@ export default function PhotoBooth() {
 
     const slots = [
         { x: 123, y: 78 },
-        { x: 123, y: 697 },
+        { x: 123, y: 680 },
         { x: 123, y: 1286 },
         { x: 123, y: 1885 }
     ];
@@ -52,6 +52,10 @@ export default function PhotoBooth() {
     const [videoPreviewReady, setVideoPreviewReady] = useState(false);
     const [allPhotosTaken, setAllPhotosTaken] = useState(false);
     const [showRetakeCamera, setShowRetakeCamera] = useState(false);
+    const [showResult, setShowResult] = useState(false);
+    const [resultPhotoUrl, setResultPhotoUrl] = useState(null);
+    const [resultVideoUrl, setResultVideoUrl] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         setPhotoCount(photos.length);
@@ -432,10 +436,10 @@ export default function PhotoBooth() {
     };
 
     // Draw 4 videos simultaneously on a canvas with the selected frame overlay
-    const drawVideosOnCanvas = (ctx, videoElements, canvasWidth, canvasHeight, frameImg) => {
+    const drawVideosOnCanvas = (ctx, videoElements, canvasWidth, canvasHeight, frameImg, xOffset = 0) => {
         // Clear with black background
         ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        ctx.fillRect(xOffset, 0, canvasWidth, canvasHeight);
 
         // Draw each video in its slot with clipping
         videoElements.forEach((item) => {
@@ -452,16 +456,16 @@ export default function PhotoBooth() {
 
                 ctx.save();
                 ctx.beginPath();
-                ctx.rect(slot.x, slot.y, SLOT_WIDTH, SLOT_HEIGHT);
+                ctx.rect(xOffset + slot.x, slot.y, SLOT_WIDTH, SLOT_HEIGHT);
                 ctx.clip();
-                ctx.drawImage(video, slot.x, slot.y + offsetY, SLOT_WIDTH, drawH);
+                ctx.drawImage(video, xOffset + slot.x, slot.y + offsetY, SLOT_WIDTH, drawH);
                 ctx.restore();
             }
         });
 
         // Draw frame on top
         if (frameImg) {
-            ctx.drawImage(frameImg, 0, 0, canvasWidth, canvasHeight);
+            ctx.drawImage(frameImg, xOffset, 0, canvasWidth, canvasHeight);
         }
     };
 
@@ -511,7 +515,7 @@ export default function PhotoBooth() {
 
         setVideoPreviewReady(true);
 
-        // Animate canvas
+        // Animate single video strip preview
         const previewCanvas = videoPreviewCanvasRef.current;
         if (!previewCanvas) return;
         previewCanvas.width = canvasWidth;
@@ -554,9 +558,10 @@ export default function PhotoBooth() {
                 const videoDuration = 5; // seconds
                 const canvasWidth = frameImg.width;
                 const canvasHeight = frameImg.height;
+                const combinedWidth = canvasWidth * 2;
 
                 const recordCanvas = document.createElement('canvas');
-                recordCanvas.width = canvasWidth;
+                recordCanvas.width = combinedWidth;
                 recordCanvas.height = canvasHeight;
                 const ctx = recordCanvas.getContext('2d');
 
@@ -617,7 +622,10 @@ export default function PhotoBooth() {
                 mediaRecorder.start();
 
                 const frameInterval = setInterval(() => {
-                    drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg);
+                    // KIRI: video strip
+                    drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, 0);
+                    // KANAN: video strip (duplikat)
+                    drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, canvasWidth);
                 }, 1000 / 30);
 
                 setTimeout(() => {
@@ -634,28 +642,72 @@ export default function PhotoBooth() {
     };
 
 
-    const handleFinish = async () => {
-        console.log('🎬 Finishing session and saving files...');
+    // Buat URL foto strip yang diduplikat (foto | foto)
+    const createDuplicatedPhotoUrl = () => {
+        const photoCanvas = canvasRef.current;
+        if (!photoCanvas) return null;
+        const dupCanvas = document.createElement('canvas');
+        dupCanvas.width = photoCanvas.width * 2;
+        dupCanvas.height = photoCanvas.height;
+        const ctx = dupCanvas.getContext('2d');
+        ctx.drawImage(photoCanvas, 0, 0);
+        ctx.drawImage(photoCanvas, photoCanvas.width, 0);
+        return dupCanvas.toDataURL('image/png');
+    };
 
-        // Simpan foto strip (PNG)
-        if (canvasRef.current) {
-            const url = canvasRef.current.toDataURL('image/png');
-            const blob = dataUrlToBlob(url);
+    // Klik Finish → buat foto & video gabungan, lalu tampilkan preview
+    const resultVideoBlobRef = useRef(null);
+
+    const handleFinish = async () => {
+        setIsSaving(true);
+
+        // Buat foto duplikat untuk preview
+        const photoUrl = createDuplicatedPhotoUrl();
+        setResultPhotoUrl(photoUrl);
+
+        // Buat video duplikat (gabungan) untuk preview
+        const videoBlob = await createCombinedVideoFrame();
+        if (videoBlob) {
+            resultVideoBlobRef.current = videoBlob;
+            setResultVideoUrl(URL.createObjectURL(videoBlob));
+        }
+
+        setIsSaving(false);
+        setShowResult(true);
+    };
+
+    // Klik Finish di halaman preview → simpan lalu reset
+    const handleFinishFromResult = async () => {
+        setIsSaving(true);
+        console.log('🎬 Saving files...');
+
+        // Simpan foto duplikat (PNG)
+        if (resultPhotoUrl) {
+            const blob = dataUrlToBlob(resultPhotoUrl);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             await saveFileToResultsFolder(`photo-${timestamp}.png`, blob);
         }
 
-        // Simpan video gabungan (WebM)
-        const combinedVideoBlob = await createCombinedVideoFrame();
-        if (combinedVideoBlob) {
+        // Simpan video duplikat (WebM) — sudah dibuat sebelumnya
+        if (resultVideoBlobRef.current) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            await saveFileToResultsFolder(`video-${timestamp}.webm`, combinedVideoBlob);
+            await saveFileToResultsFolder(`video-${timestamp}.webm`, resultVideoBlobRef.current);
         }
 
-        // Stop any running video preview
+        console.log('✅ Files saved!');
+
+        // Cleanup
         stopVideoPreview();
+        if (resultVideoUrl) {
+            URL.revokeObjectURL(resultVideoUrl);
+        }
+        resultVideoBlobRef.current = null;
 
         // Reset all state
+        setIsSaving(false);
+        setShowResult(false);
+        setResultPhotoUrl(null);
+        setResultVideoUrl(null);
         allVideoBlobs.current = {};
         setSessionStarted(false);
         setCanTakePhoto(false);
@@ -671,8 +723,6 @@ export default function PhotoBooth() {
         setAllPhotosTaken(false);
         setVideoPreviewReady(false);
         setShowRetakeCamera(false);
-        
-        console.log('✅ Session finished! All files saved.');
     };
 
     const showRetakeButton = selectedPhotoIndex !== null && photos[selectedPhotoIndex];
@@ -686,6 +736,8 @@ export default function PhotoBooth() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [allPhotosTaken]);
+
+
 
     return (
         <div style={centerCol}>
@@ -838,19 +890,14 @@ export default function PhotoBooth() {
                                                 Retake selected
                                             </button>
                                         )}
-                                        {showRetakeCamera && (
-                                            <button style={{ ...buttonStyle, background: "#fff0f4" }}
-                                                onClick={() => { setShowRetakeCamera(false); setAllPhotosTaken(true); }}>
-                                                ✕ Batal
-                                            </button>
-                                        )}
+
                                     </div>
                                 </>
                             )}
 
-                            {/* Mode decorate: hint retake saja (tanpa stiker) */}
+                            {/* Mode decorate: hint retake */}
                             {mode === "decorate" && !showRetakeCamera && (
-                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20, paddingTop: 20 }}>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, paddingTop: 20 }}>
                                     {showRetakeButton ? (
                                         <div style={{ textAlign: "center" }}>
                                             <div style={{ fontSize: 14, color: "#8c5b4a", marginBottom: 10 }}>
@@ -870,7 +917,7 @@ export default function PhotoBooth() {
                             )}
                         </div>
 
-                        {/* RIGHT PANEL: foto strip + video preview berdampingan */}
+                        {/* RIGHT PANEL: foto strip + video preview */}
                         <div style={{ display: "flex", flexDirection: "row", gap: 16, alignItems: "flex-start" }}>
                             {/* Photo strip canvas */}
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -878,7 +925,7 @@ export default function PhotoBooth() {
                                 <canvas
                                     ref={canvasRef}
                                     style={{
-                                        width: 200, height: 600, borderRadius: 14,
+                                        width: 290, height: 760, borderRadius: 14,
                                         boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
                                         display: "block",
                                         cursor: mode === "decorate" ? "pointer" : "default",
@@ -890,15 +937,15 @@ export default function PhotoBooth() {
                                 />
                             </div>
 
-                            {/* Video preview canvas — tampil otomatis berdampingan saat allPhotosTaken */}
+                            {/* Video preview (single strip) */}
                             {allPhotosTaken && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                     <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>🎬 Video</div>
-                                    <div style={{ position: "relative", width: 200, height: 600 }}>
+                                    <div style={{ position: "relative", width: 290, height: 760 }}>
                                         <canvas
                                             ref={videoPreviewCanvasRef}
                                             style={{
-                                                width: 200, height: 600, borderRadius: 14,
+                                                width: 290, height: 760, borderRadius: 14,
                                                 boxShadow: "0 10px 30px rgba(255,122,162,0.25)",
                                                 display: "block",
                                             }}
@@ -907,7 +954,7 @@ export default function PhotoBooth() {
                                             <div style={{
                                                 position: "absolute", inset: 0, display: "flex",
                                                 alignItems: "center", justifyContent: "center",
-                                                background: "rgba(255,255,255,0.85)", borderRadius: 18,
+                                                background: "rgba(255,255,255,0.85)", borderRadius: 14,
                                                 fontSize: 16, color: "#8c5b4a", fontWeight: "bold",
                                             }}>
                                                 ⏳ Loading...
@@ -918,10 +965,13 @@ export default function PhotoBooth() {
                             )}
 
                             {/* Finish button */}
-                            {mode === "decorate" && (
+                            {mode === "decorate" && allPhotosTaken && (
                                 <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-                                    <button style={{ ...buttonStyle, fontSize: 28, padding: "14px 30px" }} onClick={handleFinish}>
-                                        Finish
+                                    <button
+                                        style={{ ...buttonStyle, fontSize: 28, padding: "14px 30px" }}
+                                        onClick={handleFinish}
+                                    >
+                                        ✅ Finish
                                     </button>
                                 </div>
                             )}
@@ -929,6 +979,7 @@ export default function PhotoBooth() {
                     </div>
                 )}
             </div>
+
 
             {/* Name Input Modal */}
             {showNameInput && (
@@ -1003,6 +1054,135 @@ export default function PhotoBooth() {
                             OK
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Result Page Overlay */}
+            {showResult && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "linear-gradient(135deg, #fff5f7 0%, #ffe0e8 50%, #ffd6e0 100%)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1000,
+                    overflow: "auto",
+                    padding: "30px 20px",
+                }}>
+                    <div style={{
+                        fontSize: 36,
+                        fontWeight: "bold",
+                        color: "#8c5b4a",
+                        marginBottom: 24,
+                        textAlign: "center",
+                        fontFamily: "CantikaCute",
+                    }}>
+                        ✨ Hasil Foto & Video ✨
+                    </div>
+
+                    <div style={{
+                        display: "flex",
+                        gap: 32,
+                        alignItems: "flex-start",
+                        justifyContent: "center",
+                        flexWrap: "wrap",
+                        maxWidth: 900,
+                    }}>
+                        {/* Foto Result */}
+                        {resultPhotoUrl && (
+                            <div style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                gap: 10,
+                            }}>
+                                <div style={{
+                                    fontSize: 18,
+                                    color: "#8c5b4a",
+                                    fontWeight: "bold",
+                                    fontFamily: "CantikaCute",
+                                }}>📸 Foto</div>
+                                <img
+                                    src={resultPhotoUrl}
+                                    alt="Hasil Foto"
+                                    style={{
+                                        width: 380,
+                                        borderRadius: 14,
+                                        boxShadow: "0 10px 40px rgba(140, 91, 74, 0.25)",
+                                        border: "3px solid #ff7aa2",
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Video Result - video gabungan */}
+                        {resultVideoUrl && (
+                            <div style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                gap: 10,
+                            }}>
+                                <div style={{
+                                    fontSize: 18,
+                                    color: "#8c5b4a",
+                                    fontWeight: "bold",
+                                    fontFamily: "CantikaCute",
+                                }}>🎬 Video</div>
+                                <video
+                                    src={resultVideoUrl}
+                                    autoPlay
+                                    loop
+                                    muted
+                                    playsInline
+                                    style={{
+                                        width: 380,
+                                        borderRadius: 14,
+                                        boxShadow: "0 10px 40px rgba(140, 91, 74, 0.25)",
+                                        border: "3px solid #ff7aa2",
+                                    }}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        style={{
+                            ...buttonStyle,
+                            fontSize: 28,
+                            padding: "16px 50px",
+                            marginTop: 32,
+                            background: isSaving
+                                ? "linear-gradient(135deg, #ccc, #ddd)"
+                                : "linear-gradient(135deg, #ff7aa2, #ffb6c1)",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 16,
+                            boxShadow: "0 8px 25px rgba(255, 122, 162, 0.4)",
+                            transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                            opacity: isSaving ? 0.7 : 1,
+                            cursor: isSaving ? "not-allowed" : "pointer",
+                        }}
+                        onClick={handleFinishFromResult}
+                        disabled={isSaving}
+                        onMouseEnter={(e) => {
+                            if (!isSaving) {
+                                e.currentTarget.style.transform = "scale(1.05)";
+                                e.currentTarget.style.boxShadow = "0 12px 35px rgba(255, 122, 162, 0.5)";
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1)";
+                            e.currentTarget.style.boxShadow = "0 8px 25px rgba(255, 122, 162, 0.4)";
+                        }}
+                    >
+                        {isSaving ? "⏳ Menyimpan..." : "✅ Finish"}
+                    </button>
                 </div>
             )}
         </div>
