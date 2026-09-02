@@ -154,20 +154,20 @@ export default function PhotoBooth() {
         return new Promise((resolve) => {
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
                 const recorder = mediaRecorderRef.current;
-                
+
                 const handleStop = () => {
                     recorder.removeEventListener('stop', handleStop);
-                    
+
                     // Store video for this slot if slotIndex provided
                     if (slotIndex !== null && liveVideoBlobRef.current) {
                         allVideoBlobs.current[slotIndex] = liveVideoBlobRef.current;
                         console.log(`📹 Saved video for slot ${slotIndex}`);
                     }
-                    
+
                     mediaRecorderRef.current = null;
                     resolve();
                 };
-                
+
                 recorder.addEventListener('stop', handleStop);
                 recorder.stop();
             } else {
@@ -187,7 +187,7 @@ export default function PhotoBooth() {
             setNameError("⚠️ Nama harus diisi!");
             return;
         }
-        
+
         setNameError("");
         setShowNameInput(false);
         setSessionStarted(true);
@@ -272,10 +272,10 @@ export default function PhotoBooth() {
 
         setCanTakePhoto(false);
         setCountdown(5);
-        
+
         // Determine which slot will be used
         const targetSlot = retakeSlotIndex !== null ? retakeSlotIndex : getNextAvailableSlot();
-        
+
         startShortVideoCapture();
 
         let current = 5;
@@ -411,9 +411,9 @@ export default function PhotoBooth() {
             // Add username prefix to filename
             const namePrefix = userName ? `${userName}-` : "";
             const fullFileName = `${namePrefix}${fileName}`;
-            
+
             console.log(`📤 Attempting to save: ${fullFileName}`);
-            
+
             // Send to backend server
             const response = await fetch('http://localhost:5000/api/save-blob?filename=' + encodeURIComponent(fullFileName), {
                 method: 'POST',
@@ -532,7 +532,7 @@ export default function PhotoBooth() {
         ));
 
         // Play all videos
-        await Promise.all(videoElements.map(item => item.video.play().catch(() => {})));
+        await Promise.all(videoElements.map(item => item.video.play().catch(() => { })));
 
         // Animate dual video strip preview
         const previewCanvas2 = videoPreviewCanvasRef.current;
@@ -637,7 +637,7 @@ export default function PhotoBooth() {
                 };
 
                 // Play all videos simultaneously then start recording
-                await Promise.all(videoElements.map(item => item.video.play().catch(() => {})));
+                await Promise.all(videoElements.map(item => item.video.play().catch(() => { })));
                 mediaRecorder.start();
 
                 const frameInterval = setInterval(() => {
@@ -807,7 +807,7 @@ export default function PhotoBooth() {
                 ============================================================ */}
                 <h1 style={titleBar}>
                     {!selectedFrame
-                        ? "₊✩‧₊˚ Select a frame౨ৎ ˚₊✩‧₊"      // ← GANTI: judul utama / nama photobooth
+                        ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"      // ← GANTI: judul utama / nama photobooth
                         : mode === "photo"
                             ? "⋆｡‧˚ʚ Smile :)ɞ˚‧｡⋆"            // ← GANTI: teks saat ambil foto
                             : ". ݁₊ ⊹ . ݁Let's decorate . ⊹ ₊ ݁."}  {/* ← GANTI: teks saat review */}
@@ -940,10 +940,10 @@ export default function PhotoBooth() {
                             {/* Photo strip canvas (Duplicated view) */}
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                 <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>📸 Foto</div>
-                                <div style={{ 
-                                    display: "flex", 
-                                    boxShadow: "0 10px 30px rgba(0,0,0,0.15)", 
-                                    borderRadius: 14, 
+                                <div style={{
+                                    display: "flex",
+                                    boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+                                    borderRadius: 14,
                                     overflow: "hidden",
                                     outline: showRetakeButton ? "3px solid #ff7aa2" : "none",
                                 }}>
@@ -1029,7 +1029,7 @@ export default function PhotoBooth() {
                         <h2 style={{ margin: "0 0 20px 0", color: "#8c5b4a", fontSize: 28 }}>
                             Masukkan Nama Kamu
                         </h2>
-                        
+
                         <input
                             type="text"
                             placeholder="Nama..."
