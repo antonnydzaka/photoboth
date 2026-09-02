@@ -52,9 +52,7 @@ export default function PhotoBooth() {
 
     const [allPhotosTaken, setAllPhotosTaken] = useState(false);
     const [showRetakeCamera, setShowRetakeCamera] = useState(false);
-    const [showResult, setShowResult] = useState(false);
-    const [resultPhotoUrl, setResultPhotoUrl] = useState(null);
-    const [resultVideoUrl, setResultVideoUrl] = useState(null);
+    const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
@@ -446,8 +444,8 @@ export default function PhotoBooth() {
 
     // Draw 4 videos simultaneously on a canvas with the selected frame overlay
     const drawVideosOnCanvas = (ctx, videoElements, canvasWidth, canvasHeight, frameImg, xOffset = 0) => {
-        // Clear with black background
-        ctx.fillStyle = '#000';
+        // Clear with white background to prevent black borders
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(xOffset, 0, canvasWidth, canvasHeight);
 
         // Draw each video in its slot with clipping
@@ -674,74 +672,57 @@ export default function PhotoBooth() {
         return dupCanvas.toDataURL('image/png');
     };
 
-    // Klik Finish → buat foto & video gabungan, lalu tampilkan preview
-    const resultVideoBlobRef = useRef(null);
-
-    const handleFinish = async () => {
+    const handleFinalSave = async () => {
+        if (isSaving || showSuccessPopup) return;
         setIsSaving(true);
-
-        // Buat foto duplikat untuk preview
-        const photoUrl = createDuplicatedPhotoUrl();
-        setResultPhotoUrl(photoUrl);
-
-        // Buat video duplikat (gabungan) untuk preview
-        const videoBlob = await createCombinedVideoFrame();
-        if (videoBlob) {
-            resultVideoBlobRef.current = videoBlob;
-            setResultVideoUrl(URL.createObjectURL(videoBlob));
-        }
-
-        setIsSaving(false);
-        setShowResult(true);
-    };
-
-    // Klik Finish di halaman preview → simpan lalu reset
-    const handleFinishFromResult = async () => {
-        setIsSaving(true);
-        console.log('🎬 Saving files...');
+        console.log('🎬 Saving files directly...');
 
         // Simpan foto duplikat (PNG)
-        if (resultPhotoUrl) {
-            const blob = dataUrlToBlob(resultPhotoUrl);
+        const photoUrl = createDuplicatedPhotoUrl();
+        if (photoUrl) {
+            const blob = dataUrlToBlob(photoUrl);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             await saveFileToResultsFolder(`photo-${timestamp}.png`, blob);
         }
 
-        // Simpan video duplikat (WebM) — sudah dibuat sebelumnya
-        if (resultVideoBlobRef.current) {
+        // Simpan video duplikat (WebM)
+        const videoBlob = await createCombinedVideoFrame();
+        if (videoBlob) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            await saveFileToResultsFolder(`video-${timestamp}.webm`, resultVideoBlobRef.current);
+            await saveFileToResultsFolder(`video-${timestamp}.webm`, videoBlob);
         }
 
         console.log('✅ Files saved!');
-
-        // Cleanup
-        stopVideoPreview();
-        if (resultVideoUrl) {
-            URL.revokeObjectURL(resultVideoUrl);
-        }
-        resultVideoBlobRef.current = null;
-
-        // Reset all state
         setIsSaving(false);
-        setShowResult(false);
-        setResultPhotoUrl(null);
-        setResultVideoUrl(null);
-        allVideoBlobs.current = {};
-        setSessionStarted(false);
-        setCanTakePhoto(false);
-        setSelectedFrame(null);
-        setMode("photo");
-        setPhotos([]);
-        setPhotoCount(0);
-        setSelectedPhotoIndex(null);
-        setRetakeSlotIndex(null);
-        setCountdown(null);
-        setSessionTimeLeft(180);
-        setUserName("");
-        setAllPhotosTaken(false);
-        setShowRetakeCamera(false);
+        setShowSuccessPopup(true);
+
+        setTimeout(() => {
+            setShowSuccessPopup(false);
+            // Cleanup
+            stopVideoPreview();
+            allVideoBlobs.current = {};
+            setSessionStarted(false);
+            setCanTakePhoto(false);
+            setSelectedFrame(null);
+            setMode("photo");
+            setPhotos([]);
+            setPhotoCount(0);
+            setSelectedPhotoIndex(null);
+            setRetakeSlotIndex(null);
+            setCountdown(null);
+            setSessionTimeLeft(180);
+            setUserName("");
+            setAllPhotosTaken(false);
+            setShowRetakeCamera(false);
+        }, 2000);
     };
+
+    useEffect(() => {
+        if (sessionStarted && sessionTimeLeft === 0 && !isSaving && !showSuccessPopup) {
+            handleFinalSave();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionTimeLeft, sessionStarted, isSaving, showSuccessPopup]);
 
     const showRetakeButton = selectedPhotoIndex !== null && photos[selectedPhotoIndex];
 
@@ -964,7 +945,6 @@ export default function PhotoBooth() {
                                             style={{
                                                 width: 290, height: 760,
                                                 display: "block",
-                                                borderLeft: "1px dashed rgba(255,122,162,0.3)",
                                             }}
                                         />
                                     )}
@@ -991,10 +971,11 @@ export default function PhotoBooth() {
                             {mode === "decorate" && allPhotosTaken && (
                                 <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
                                     <button
-                                        style={{ ...buttonStyle, fontSize: 28, padding: "14px 30px" }}
-                                        onClick={handleFinish}
+                                        style={{ ...buttonStyle, fontSize: 28, padding: "14px 30px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
+                                        onClick={handleFinalSave}
+                                        disabled={isSaving}
                                     >
-                                        ✅ Finish
+                                        {isSaving ? "⏳ Saving..." : "✅ Finish"}
                                     </button>
                                 </div>
                             )}
@@ -1080,132 +1061,34 @@ export default function PhotoBooth() {
                 </div>
             )}
 
-            {/* Result Page Overlay */}
-            {showResult && (
+            {/* Loading & Success Popups */}
+            {(isSaving || showSuccessPopup) && (
                 <div style={{
                     position: "fixed",
                     top: 0,
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: "linear-gradient(135deg, #fff5f7 0%, #ffe0e8 50%, #ffd6e0 100%)",
+                    background: "rgba(0, 0, 0, 0.6)",
                     display: "flex",
-                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    zIndex: 1000,
-                    overflow: "auto",
-                    padding: "30px 20px",
+                    zIndex: 2000,
                 }}>
                     <div style={{
-                        fontSize: 36,
-                        fontWeight: "bold",
-                        color: "#8c5b4a",
-                        marginBottom: 24,
+                        background: "white",
+                        padding: "50px 80px",
+                        borderRadius: 24,
                         textAlign: "center",
-                        fontFamily: "CantikaCute",
+                        boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
                     }}>
-                        ✨ Hasil Foto & Video ✨
+                        <div style={{ fontSize: 64, marginBottom: 20 }}>
+                            {isSaving ? "⏳" : "✅"}
+                        </div>
+                        <h2 style={{ margin: 0, color: "#8c5b4a", fontSize: 32, fontFamily: "CantikaCute" }}>
+                            {isSaving ? "Mohon tunggu, sedang menyimpan..." : "Berhasil! Selesai disimpan."}
+                        </h2>
                     </div>
-
-                    <div style={{
-                        display: "flex",
-                        gap: 32,
-                        alignItems: "flex-start",
-                        justifyContent: "center",
-                        flexWrap: "wrap",
-                        maxWidth: 900,
-                    }}>
-                        {/* Foto Result */}
-                        {resultPhotoUrl && (
-                            <div style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                gap: 10,
-                            }}>
-                                <div style={{
-                                    fontSize: 18,
-                                    color: "#8c5b4a",
-                                    fontWeight: "bold",
-                                    fontFamily: "CantikaCute",
-                                }}>📸 Foto</div>
-                                <img
-                                    src={resultPhotoUrl}
-                                    alt="Hasil Foto"
-                                    style={{
-                                        width: 380,
-                                        borderRadius: 14,
-                                        boxShadow: "0 10px 40px rgba(140, 91, 74, 0.25)",
-                                        border: "3px solid #ff7aa2",
-                                    }}
-                                />
-                            </div>
-                        )}
-
-                        {/* Video Result - video gabungan */}
-                        {resultVideoUrl && (
-                            <div style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                gap: 10,
-                            }}>
-                                <div style={{
-                                    fontSize: 18,
-                                    color: "#8c5b4a",
-                                    fontWeight: "bold",
-                                    fontFamily: "CantikaCute",
-                                }}>🎬 Video</div>
-                                <video
-                                    src={resultVideoUrl}
-                                    autoPlay
-                                    loop
-                                    muted
-                                    playsInline
-                                    style={{
-                                        width: 380,
-                                        borderRadius: 14,
-                                        boxShadow: "0 10px 40px rgba(140, 91, 74, 0.25)",
-                                        border: "3px solid #ff7aa2",
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
-
-                    <button
-                        style={{
-                            ...buttonStyle,
-                            fontSize: 28,
-                            padding: "16px 50px",
-                            marginTop: 32,
-                            background: isSaving
-                                ? "linear-gradient(135deg, #ccc, #ddd)"
-                                : "linear-gradient(135deg, #ff7aa2, #ffb6c1)",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 16,
-                            boxShadow: "0 8px 25px rgba(255, 122, 162, 0.4)",
-                            transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                            opacity: isSaving ? 0.7 : 1,
-                            cursor: isSaving ? "not-allowed" : "pointer",
-                        }}
-                        onClick={handleFinishFromResult}
-                        disabled={isSaving}
-                        onMouseEnter={(e) => {
-                            if (!isSaving) {
-                                e.currentTarget.style.transform = "scale(1.05)";
-                                e.currentTarget.style.boxShadow = "0 12px 35px rgba(255, 122, 162, 0.5)";
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "scale(1)";
-                            e.currentTarget.style.boxShadow = "0 8px 25px rgba(255, 122, 162, 0.4)";
-                        }}
-                    >
-                        {isSaving ? "⏳ Menyimpan..." : "✅ Finish"}
-                    </button>
                 </div>
             )}
         </div>
