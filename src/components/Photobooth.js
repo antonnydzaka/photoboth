@@ -50,7 +50,6 @@ export default function PhotoBooth() {
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [countdown, setCountdown] = useState(null);
 
-    const [videoPreviewReady, setVideoPreviewReady] = useState(false);
     const [allPhotosTaken, setAllPhotosTaken] = useState(false);
     const [showRetakeCamera, setShowRetakeCamera] = useState(false);
     const [showResult, setShowResult] = useState(false);
@@ -490,6 +489,18 @@ export default function PhotoBooth() {
         const canvasWidth = frameImg.width;
         const canvasHeight = frameImg.height;
 
+        // 🚀 Optimasi: Gambar placeholder (foto statis) ke canvas video segera mungkin
+        const previewCanvas = videoPreviewCanvasRef.current;
+        const photoCanvas = canvasRef.current;
+        if (previewCanvas && photoCanvas) {
+            previewCanvas.width = canvasWidth * 2;
+            previewCanvas.height = canvasHeight;
+            const ctx = previewCanvas.getContext('2d');
+            // Gambar foto duplikat sebagai placeholder agar tidak ada black screen
+            ctx.drawImage(photoCanvas, 0, 0);
+            ctx.drawImage(photoCanvas, canvasWidth, 0);
+        }
+
         // Create video elements
         const videoElements = [];
         for (let i = 0; i < 4; i++) {
@@ -523,14 +534,12 @@ export default function PhotoBooth() {
         // Play all videos
         await Promise.all(videoElements.map(item => item.video.play().catch(() => {})));
 
-        setVideoPreviewReady(true);
-
         // Animate dual video strip preview
-        const previewCanvas = videoPreviewCanvasRef.current;
-        if (!previewCanvas) return;
-        previewCanvas.width = canvasWidth * 2;
-        previewCanvas.height = canvasHeight;
-        const ctx = previewCanvas.getContext('2d');
+        const previewCanvas2 = videoPreviewCanvasRef.current;
+        if (!previewCanvas2) return;
+        previewCanvas2.width = canvasWidth * 2;
+        previewCanvas2.height = canvasHeight;
+        const ctx = previewCanvas2.getContext('2d');
 
         const animate = () => {
             drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, 0);
@@ -553,7 +562,6 @@ export default function PhotoBooth() {
             }
         });
         videoPreviewElementsRef.current = [];
-        setVideoPreviewReady(false);
     };
 
     const createCombinedVideoFrame = async () => {
@@ -732,7 +740,6 @@ export default function PhotoBooth() {
         setSessionTimeLeft(180);
         setUserName("");
         setAllPhotosTaken(false);
-        setVideoPreviewReady(false);
         setShowRetakeCamera(false);
     };
 
@@ -976,16 +983,6 @@ export default function PhotoBooth() {
                                                 display: "block",
                                             }}
                                         />
-                                        {!videoPreviewReady && (
-                                            <div style={{
-                                                position: "absolute", inset: 0, display: "flex",
-                                                alignItems: "center", justifyContent: "center",
-                                                background: "rgba(255,255,255,0.85)",
-                                                fontSize: 16, color: "#8c5b4a", fontWeight: "bold",
-                                            }}>
-                                                ⏳ Loading...
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             )}
