@@ -8,9 +8,10 @@ const frameOptions = [
     "/assets/frames/heart-frame-4.png",
 ];
 
-const videoConstraints = { width: 953, height: 599, facingMode: "user" };
-const SLOT_WIDTH = 953;
-const SLOT_HEIGHT = 599;
+const OVERLAP = 12; // Adjust overlap to bleed under the frame
+const videoConstraints = { width: 953 + (OVERLAP*2), height: 599 + (OVERLAP*2), facingMode: "user" };
+const SLOT_WIDTH = 953 + (OVERLAP*2);
+const SLOT_HEIGHT = 599 + (OVERLAP*2);
 
 
 export default function PhotoBooth() {
@@ -27,10 +28,10 @@ export default function PhotoBooth() {
     const videoPreviewElementsRef = useRef([]); // Video elements for preview
 
     const slots = [
-        { x: 123, y: 78 },
-        { x: 123, y: 680 },
-        { x: 123, y: 1286 },
-        { x: 123, y: 1885 }
+        { x: 123 - OVERLAP, y: 78 - OVERLAP },
+        { x: 123 - OVERLAP, y: 680 - OVERLAP },
+        { x: 123 - OVERLAP, y: 1286 - OVERLAP },
+        { x: 123 - OVERLAP, y: 1885 - OVERLAP }
     ];
 
     const [selectedFrame, setSelectedFrame] = useState(null);
@@ -100,6 +101,14 @@ export default function PhotoBooth() {
 
         ctx.drawImage(frameImgRef.current, 0, 0, frameWidth, frameHeight);
 
+        // Draw username if exists
+        if (userName) {
+            ctx.fillStyle = '#8c5b4a';
+            ctx.font = 'bold 42px CantikaCute, Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(userName, frameWidth / 2, frameHeight - 35);
+        }
+
         // Draw to duplicate canvas
         const dupCanvas = dupCanvasRef.current;
         if (dupCanvas) {
@@ -130,7 +139,8 @@ export default function PhotoBooth() {
 
         if (!stream) return;
 
-        const recorder = new MediaRecorder(stream);
+        const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+        const recorder = new MediaRecorder(stream, { mimeType });
         recordedChunksRef.current = [];
 
         recorder.ondataavailable = (event) => {
@@ -140,7 +150,7 @@ export default function PhotoBooth() {
         };
 
         recorder.onstop = () => {
-            liveVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: "video/webm" });
+            liveVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: mimeType });
             recordedChunksRef.current = [];
         };
 
@@ -443,7 +453,7 @@ export default function PhotoBooth() {
     };
 
     // Draw 4 videos simultaneously on a canvas with the selected frame overlay
-    const drawVideosOnCanvas = (ctx, videoElements, canvasWidth, canvasHeight, frameImg, xOffset = 0) => {
+    const drawVideosOnCanvas = (ctx, videoElements, canvasWidth, canvasHeight, frameImg, xOffset = 0, currentPhotos = []) => {
         // Clear with white background to prevent black borders
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(xOffset, 0, canvasWidth, canvasHeight);
@@ -452,20 +462,29 @@ export default function PhotoBooth() {
         videoElements.forEach((item) => {
             const slot = slots[item.slotIndex];
             const video = item.video;
+            const fallbackPhoto = currentPhotos.find(p => p.slotIndex === item.slotIndex);
 
-            if (slot && video.readyState >= 2) {
-                const vw = video.videoWidth || SLOT_WIDTH;
-                const vh = video.videoHeight || SLOT_HEIGHT;
-
-                const scale = SLOT_WIDTH / vw;
-                const drawH = vh * scale;
-                const offsetY = drawH > SLOT_HEIGHT ? (SLOT_HEIGHT - drawH) / 2 : 0;
-
+            if (slot) {
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(xOffset + slot.x, slot.y, SLOT_WIDTH, SLOT_HEIGHT);
                 ctx.clip();
-                ctx.drawImage(video, xOffset + slot.x, slot.y + offsetY, SLOT_WIDTH, drawH);
+
+                if (video.readyState >= 2) {
+                    const vw = video.videoWidth || SLOT_WIDTH;
+                    const vh = video.videoHeight || SLOT_HEIGHT;
+                    const scale = SLOT_WIDTH / vw;
+                    const drawH = vh * scale;
+                    const offsetY = drawH > SLOT_HEIGHT ? (SLOT_HEIGHT - drawH) / 2 : 0;
+                    ctx.drawImage(video, xOffset + slot.x, slot.y + offsetY, SLOT_WIDTH, drawH);
+                } else if (fallbackPhoto) {
+                    const drawW = fallbackPhoto.img.width * fallbackPhoto.scale;
+                    const drawH = fallbackPhoto.img.height * fallbackPhoto.scale;
+                    const dx = xOffset + slot.x + fallbackPhoto.offsetX;
+                    const dy = slot.y + fallbackPhoto.offsetY;
+                    ctx.drawImage(fallbackPhoto.img, dx, dy, drawW, drawH);
+                }
+
                 ctx.restore();
             }
         });
@@ -473,6 +492,14 @@ export default function PhotoBooth() {
         // Draw frame on top
         if (frameImg) {
             ctx.drawImage(frameImg, xOffset, 0, canvasWidth, canvasHeight);
+        }
+
+        // Draw username if exists
+        if (userName) {
+            ctx.fillStyle = '#8c5b4a';
+            ctx.font = 'bold 42px CantikaCute, Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(userName, xOffset + (canvasWidth / 2), canvasHeight - 35);
         }
     };
 
@@ -539,10 +566,28 @@ export default function PhotoBooth() {
         previewCanvas2.height = canvasHeight;
         const ctx = previewCanvas2.getContext('2d');
 
-        const animate = () => {
-            drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, 0);
-            drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, canvasWidth);
+        // Optimize: Draw once to offscreen canvas, then copy twice to reduce draw calls by 50%
+        const offscreen = document.createElement('canvas');
+        offscreen.width = canvasWidth;
+        offscreen.height = canvasHeight;
+        const offCtx = offscreen.getContext('2d', { alpha: false });
+
+        let lastTime = 0;
+        const fpsInterval = 1000 / 30; // Cap at 30 fps to reduce lag
+
+        const animate = (time) => {
             videoPreviewAnimRef.current = requestAnimationFrame(animate);
+            const elapsed = time - lastTime;
+            if (elapsed > fpsInterval) {
+                lastTime = time - (elapsed % fpsInterval);
+                
+                // Draw 1 strip to offscreen
+                drawVideosOnCanvas(offCtx, videoElements, canvasWidth, canvasHeight, frameImg, 0, photos);
+                
+                // Draw offscreen twice to main canvas
+                ctx.drawImage(offscreen, 0, 0);
+                ctx.drawImage(offscreen, canvasWidth, 0);
+            }
         };
         videoPreviewAnimRef.current = requestAnimationFrame(animate);
     };
@@ -613,9 +658,11 @@ export default function PhotoBooth() {
 
                 // Start recording canvas stream
                 const stream = recordCanvas.captureStream(30);
-                const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                    ? 'video/webm;codecs=vp9'
-                    : 'video/webm';
+                const mimeType = MediaRecorder.isTypeSupported('video/mp4')
+                    ? 'video/mp4'
+                    : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+                        ? 'video/webm;codecs=vp9'
+                        : 'video/webm';
                 const mediaRecorder = new MediaRecorder(stream, { mimeType });
                 const chunks = [];
 
@@ -624,7 +671,7 @@ export default function PhotoBooth() {
                 };
 
                 mediaRecorder.onstop = () => {
-                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const blob = new Blob(chunks, { type: mimeType });
                     videoElements.forEach(item => {
                         item.video.pause();
                         URL.revokeObjectURL(item.video.src);
@@ -636,17 +683,40 @@ export default function PhotoBooth() {
 
                 // Play all videos simultaneously then start recording
                 await Promise.all(videoElements.map(item => item.video.play().catch(() => { })));
+
+                // Optimize rendering for recording
+                const offscreen = document.createElement('canvas');
+                offscreen.width = canvasWidth;
+                offscreen.height = canvasHeight;
+                const offCtx = offscreen.getContext('2d', { alpha: false });
+
+                // Draw first frame immediately before mediaRecorder starts to avoid white screen
+                drawVideosOnCanvas(offCtx, videoElements, canvasWidth, canvasHeight, frameImg, 0, photos);
+                ctx.drawImage(offscreen, 0, 0);
+                ctx.drawImage(offscreen, canvasWidth, 0);
+
                 mediaRecorder.start();
 
-                const frameInterval = setInterval(() => {
-                    // KIRI: video strip
-                    drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, 0);
-                    // KANAN: video strip (duplikat)
-                    drawVideosOnCanvas(ctx, videoElements, canvasWidth, canvasHeight, frameImg, canvasWidth);
-                }, 1000 / 30);
+                let recordingActive = true;
+                let lastTime = 0;
+                const fpsInterval = 1000 / 30;
+
+                const recordAnimate = (time) => {
+                    if (!recordingActive) return;
+                    requestAnimationFrame(recordAnimate);
+                    
+                    const elapsed = time - lastTime;
+                    if (elapsed > fpsInterval) {
+                        lastTime = time - (elapsed % fpsInterval);
+                        drawVideosOnCanvas(offCtx, videoElements, canvasWidth, canvasHeight, frameImg, 0, photos);
+                        ctx.drawImage(offscreen, 0, 0);
+                        ctx.drawImage(offscreen, canvasWidth, 0);
+                    }
+                };
+                requestAnimationFrame(recordAnimate);
 
                 setTimeout(() => {
-                    clearInterval(frameInterval);
+                    recordingActive = false;
                     videoElements.forEach(item => item.video.pause());
                     mediaRecorder.stop();
                 }, videoDuration * 1000);
@@ -685,11 +755,12 @@ export default function PhotoBooth() {
             await saveFileToResultsFolder(`photo-${timestamp}.png`, blob);
         }
 
-        // Simpan video duplikat (WebM)
+        // Simpan video duplikat (MP4 or WebM)
         const videoBlob = await createCombinedVideoFrame();
         if (videoBlob) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            await saveFileToResultsFolder(`video-${timestamp}.webm`, videoBlob);
+            const ext = videoBlob.type === 'video/mp4' ? 'mp4' : 'webm';
+            await saveFileToResultsFolder(`video-${timestamp}.${ext}`, videoBlob);
         }
 
         console.log('✅ Files saved!');
