@@ -1,6 +1,6 @@
 @font-face {
   font-family: "CantikaCute";
-  src: url("../../public/assets/fonts/Cantika\ Cute\ Handwriting.otf") format("opentype");
+  src: url("../../public/assets/fonts/Cantika Cute Handwriting.otf") format("opentype");
   font-weight: normal;
   font-style: normal;
 }
@@ -8,9 +8,11 @@
 body {
   font-family: "CantikaCute", cursive, sans-serif;
   color: #8c5b4a;
-  background-image: url("https://i.pinimg.com/736x/31/09/57/31095750b876ce6f8f9cd46f0c474417.jpg");
+  background-color: #ffffff;
+  background-image: url("../../public/assets/backgrounds/default-bg.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  background-size: 100%;
+  margin: 0;
+  padding: 0;
 }
