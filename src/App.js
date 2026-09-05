@@ -20,11 +20,13 @@ function App() {
         gap: 12,
         padding: "20px 32px"
       }}>
-        <img src={logoSrc} alt="JiggleDuo Logo" style={{ width: 50 }} />
+        <img src={logoSrc} alt="JiggleDuo Logo" style={{ width: 80 }} />
         <h1 style={{
           fontFamily: "CantikaCute",
           color: "#8c5b4a",
-          margin: 0
+          margin: 0,
+          fontSize: 56,
+          letterSpacing: 1,
         }}>
           Antonny Photobooth
         </h1>
