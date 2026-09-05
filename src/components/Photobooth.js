@@ -1,111 +1,28 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import Webcam from "react-webcam";
 
-// ─── TEMPLATE CONFIGURATION ──────────────────────────────────────────────────
-// Ganti asset di sini tanpa mengubah kode lain
-const TEMPLATE = {
-    frames: [
-        "/assets/frames/heart-frame.png",
-        "/assets/frames/heart-frame-2.png",
-        "/assets/frames/heart-frame-3.png",
-        "/assets/frames/heart-frame-4.png",
-    ],
-    name: {
-        fontSize: 90,         // ukuran font nama di canvas output
-        color: "#8c5b4a",
-        fontFamily: "CantikaCute, Arial",
-        fontWeight: "bold",
-        align: "center",
-        offsetFromBottom: 110, // jarak dari bawah canvas
-    },
-    phone: {
-        fontSize: 62,         // ukuran font telepon di canvas output
-        color: "#8c5b4a",
-        fontFamily: "CantikaCute, Arial",
-        fontWeight: "normal",
-        align: "center",
-        offsetFromBottom: 44, // jarak dari bawah canvas
-    },
-};
-
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const OVERLAP = 12;
-const videoConstraints = {
-    width: 953 + OVERLAP * 2,
-    height: 599 + OVERLAP * 2,
-    facingMode: "user",
-};
-const SLOT_WIDTH = 953 + OVERLAP * 2;
-const SLOT_HEIGHT = 599 + OVERLAP * 2;
-
-// Foto slot positions (x, y) di dalam frame
-const SLOTS = [
-    { x: 123 - OVERLAP, y: 78 - OVERLAP },
-    { x: 123 - OVERLAP, y: 680 - OVERLAP },
-    { x: 123 - OVERLAP, y: 1286 - OVERLAP },
-    { x: 123 - OVERLAP, y: 1885 - OVERLAP },
+const frameOptions = [
+    "/assets/frames/heart-frame.png",
+    "/assets/frames/heart-frame-2.png",
+    "/assets/frames/heart-frame-3.png",
+    "/assets/frames/heart-frame-4.png",
 ];
 
-// ─── HELPER: Sanitasi nama untuk filename ────────────────────────────────────
-const sanitizeFilename = (str) =>
-    str.trim().replace(/\s+/g, "").replace(/[^a-zA-Z0-9\u00C0-\u024F\u0600-\u06FF]/g, "");
+const OVERLAP = 12; // Adjust overlap to bleed under the frame
+const videoConstraints = { width: 953 + (OVERLAP*2), height: 599 + (OVERLAP*2), facingMode: "user" };
+const SLOT_WIDTH = 953 + (OVERLAP*2);
+const SLOT_HEIGHT = 599 + (OVERLAP*2);
 
-// ─── HELPER: Normalisasi nomor telepon ───────────────────────────────────────
-const normalizePhone = (phone) =>
-    phone.trim().replace(/[\s\-().]/g, "");
 
-// ─── HELPER: Validasi nomor telepon ──────────────────────────────────────────
-const isValidPhone = (phone) => {
-    const normalized = normalizePhone(phone);
-    return /^(\+62|62|0)[0-9]{7,13}$/.test(normalized);
-};
-
-// ─── HELPER: Gambar teks nama & telepon ke canvas context ────────────────────
-const drawNamePhone = (ctx, userName, userPhone, canvasWidth, canvasHeight, xOffset = 0) => {
-    if (userName) {
-        ctx.fillStyle = TEMPLATE.name.color;
-        ctx.font = `${TEMPLATE.name.fontWeight} ${TEMPLATE.name.fontSize}px ${TEMPLATE.name.fontFamily}`;
-        ctx.textAlign = TEMPLATE.name.align;
-        ctx.fillText(
-            userName.trim(),
-            xOffset + canvasWidth / 2,
-            canvasHeight - TEMPLATE.name.offsetFromBottom
-        );
-    }
-    if (userPhone) {
-        ctx.fillStyle = TEMPLATE.phone.color;
-        ctx.font = `${TEMPLATE.phone.fontWeight} ${TEMPLATE.phone.fontSize}px ${TEMPLATE.phone.fontFamily}`;
-        ctx.textAlign = TEMPLATE.phone.align;
-        ctx.fillText(
-            normalizePhone(userPhone),
-            xOffset + canvasWidth / 2,
-            canvasHeight - TEMPLATE.phone.offsetFromBottom
-        );
-    }
-};
-
-// ─── HELPER: Gambar cutting guide (hanya untuk file export combined) ─────────
-const drawCuttingGuide = (ctx, totalWidth, totalHeight) => {
-    const midX = totalWidth / 2;
-    ctx.save();
-    ctx.setLineDash([18, 10]);
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(midX, 0);
-    ctx.lineTo(midX, totalHeight);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-};
-
-// ─── COMPONENT ───────────────────────────────────────────────────────────────
 export default function PhotoBooth() {
+    // ---- REFS ----
     const webcamRef = useRef(null);
     const canvasRef = useRef(null);
     const dupCanvasRef = useRef(null);
     const videoPreviewCanvasRef = useRef(null);
     const frameImgRef = useRef(null);
+    const logoImgRef = useRef(null);
+    const bgImgRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
     const liveVideoBlobRef = useRef(null);
@@ -113,7 +30,13 @@ export default function PhotoBooth() {
     const videoPreviewAnimRef = useRef(null);
     const videoPreviewElementsRef = useRef([]);
 
-    // ── State ──
+    const slots = [
+        { x: 123 - OVERLAP, y: 78 - OVERLAP },
+        { x: 123 - OVERLAP, y: 680 - OVERLAP },
+        { x: 123 - OVERLAP, y: 1286 - OVERLAP },
+        { x: 123 - OVERLAP, y: 1885 - OVERLAP }
+    ];
+
     const [selectedFrame, setSelectedFrame] = useState(null);
     const [mode, setMode] = useState("photo");
     const [sessionStarted, setSessionStarted] = useState(false);
@@ -121,161 +44,169 @@ export default function PhotoBooth() {
     const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
     const [retakeSlotIndex, setRetakeSlotIndex] = useState(null);
     const [userName, setUserName] = useState("");
+    const [showNameInput, setShowNameInput] = useState(false);
+    const [nameError, setNameError] = useState("");
+
+    const [photos, setPhotos] = useState([]);
+    const [photoCount, setPhotoCount] = useState(0);
+    const [canTakePhoto, setCanTakePhoto] = useState(true);
+    const [countdown, setCountdown] = useState(null);
+
+    const [allPhotosTaken, setAllPhotosTaken] = useState(false);
+    const [showRetakeCamera, setShowRetakeCamera] = useState(false);
+
+    // ---- STATE: Drag ----
+    const [draggingPhoto, setDraggingPhoto] = useState(null);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+    // ---- STATE: User Input ----
+    const [userName, setUserName] = useState("");
     const [userPhone, setUserPhone] = useState("");
     const [showNameInput, setShowNameInput] = useState(false);
     const [nameError, setNameError] = useState("");
     const [phoneError, setPhoneError] = useState("");
-    const [photos, setPhotos] = useState([]);
-    const [photoCount, setPhotoCount] = useState(0);
-    const [canTakePhoto, setCanTakePhoto] = useState(true);
-    const [draggingPhoto, setDraggingPhoto] = useState(null);
-    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const [countdown, setCountdown] = useState(null);
-    const [allPhotosTaken, setAllPhotosTaken] = useState(false);
-    const [showRetakeCamera, setShowRetakeCamera] = useState(false);
-    const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveProgress, setSaveProgress] = useState(0); // 0-100
 
-    // ── Sync photo count ──
+    // ---- STATE: Assets ----
+    const [customLogo, setCustomLogo] = useState(null);
+    const [customBackground, setCustomBackground] = useState(null);
+    const [customFrames, setCustomFrames] = useState([]);
+    const [logoSettings, setLogoSettings] = useState({
+        width: 80, height: 80, offsetX: 0, offsetY: 12, opacity: 1
+    });
+
+    // ---- STATE: Output Options ----
+    const [outputPNG, setOutputPNG] = useState(true);
+    const [outputMP4, setOutputMP4] = useState(true);
+    const [showCuttingGuide, setShowCuttingGuide] = useState(false);
+    const [includeCuttingGuideInExport, setIncludeCuttingGuideInExport] = useState(false);
+
+    // ---- STATE: Save/Export ----
+    const [isSaving, setIsSaving] = useState(false);
+
     useEffect(() => {
         setPhotoCount(photos.length);
     }, [photos]);
 
-    // ── Load frame image ──
     useEffect(() => {
         if (!selectedFrame) return;
         const img = new Image();
         img.src = selectedFrame;
+
         img.onload = () => {
             frameImgRef.current = img;
             drawCanvas();
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        }
     }, [selectedFrame]);
 
-    // ── Re-draw canvas when photos / username / phone change ──
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(drawCanvas, [photos, photoCount, userName, userPhone]);
-
-    // ─── Draw main photo canvas ──────────────────────────────────────────────
-    function drawCanvas() {
+    const drawCanvas = () => {
         const canvas = canvasRef.current;
         if (!canvas || !frameImgRef.current) return;
 
         const ctx = canvas.getContext("2d");
+
         const frameWidth = frameImgRef.current.width;
         const frameHeight = frameImgRef.current.height;
         canvas.width = frameWidth;
         canvas.height = frameHeight;
 
-        ctx.clearRect(0, 0, frameWidth, frameHeight);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw photos
-        photos.forEach((p) => {
-            const slot = SLOTS[p.slotIndex];
+        photos.forEach(p => {
+            const slot = slots[p.slotIndex];
             const drawW = p.img.width * p.scale;
             const drawH = p.img.height * p.scale;
             ctx.save();
             ctx.beginPath();
-            ctx.rect(slot.x, slot.y, SLOT_WIDTH, SLOT_HEIGHT);
+            ctx.rect(xOffset + slot.x, slot.y, SLOT_WIDTH, SLOT_HEIGHT);
             ctx.clip();
-            ctx.drawImage(p.img, slot.x + p.offsetX, slot.y + p.offsetY, drawW, drawH);
+            ctx.drawImage(p.img, dx, dy, drawW, drawH);
             ctx.restore();
         });
 
-        // Draw frame overlay
         ctx.drawImage(frameImgRef.current, 0, 0, frameWidth, frameHeight);
 
-        // Sync to duplicate canvas
+        // Draw username if exists
+        if (userName) {
+            ctx.fillStyle = '#8c5b4a';
+            ctx.font = 'bold 42px CantikaCute, Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(userName, frameWidth / 2, frameHeight - 35);
+        }
+
+        // Draw to duplicate canvas
         const dupCanvas = dupCanvasRef.current;
         if (dupCanvas) {
             dupCanvas.width = frameWidth;
             dupCanvas.height = frameHeight;
-            dupCanvasRef.current.getContext("2d").drawImage(canvas, 0, 0);
+            const dupCtx = dupCanvas.getContext("2d");
+            dupCtx.drawImage(canvas, 0, 0);
         }
-    }
+    };
 
-    // ─── Timer ───────────────────────────────────────────────────────────────
+    useEffect(drawCanvas, [photos, photoCount]);
+
     const formatTime = (seconds) => {
         const min = Math.floor(seconds / 60);
         const sec = seconds % 60;
         return `${min}:${String(sec).padStart(2, "0")}`;
     };
 
-    useEffect(() => {
-        if (!sessionStarted) return;
-        const timer = setInterval(() => {
-            setSessionTimeLeft((prev) => {
-                if (prev <= 1) {
-                    clearInterval(timer);
-                    setSessionStarted(false);
-                    setCanTakePhoto(false);
-                    return 0;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [sessionStarted]);
-
-    // ─── Auto-save when timer hits 0 ─────────────────────────────────────────
-    useEffect(() => {
-        if (sessionStarted && sessionTimeLeft === 0 && !isSaving && !showSuccessPopup) {
-            handleFinalSave();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionTimeLeft, sessionStarted, isSaving, showSuccessPopup]);
-
-    // ─── Video capture helpers ────────────────────────────────────────────────
     const startShortVideoCapture = () => {
         const videoElement = webcamRef.current?.video;
         if (!videoElement) return;
-        const stream =
-            videoElement.captureStream?.() ||
-            videoElement.mozCaptureStream?.() ||
-            null;
+
+        const stream = videoElement.captureStream
+            ? videoElement.captureStream()
+            : videoElement.mozCaptureStream
+                ? videoElement.mozCaptureStream()
+                : null;
+
         if (!stream) return;
 
-        const mimeType = MediaRecorder.isTypeSupported("video/mp4")
-            ? "video/mp4"
-            : "video/webm";
+        const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
         const recorder = new MediaRecorder(stream, { mimeType });
         recordedChunksRef.current = [];
-        recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunksRef.current.push(event.data);
+            }
         };
+
         recorder.onstop = () => {
-            liveVideoBlobRef.current = new Blob(recordedChunksRef.current, {
-                type: mimeType,
-            });
+            liveVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: mimeType });
             recordedChunksRef.current = [];
         };
+
         recorder.start();
         mediaRecorderRef.current = recorder;
     };
 
-    const stopShortVideoCapture = (slotIndex = null) =>
-        new Promise((resolve) => {
-            if (
-                mediaRecorderRef.current &&
-                mediaRecorderRef.current.state !== "inactive"
-            ) {
+    const stopShortVideoCapture = async (slotIndex = null) => {
+        return new Promise((resolve) => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
                 const recorder = mediaRecorderRef.current;
+
                 const handleStop = () => {
-                    recorder.removeEventListener("stop", handleStop);
+                    recorder.removeEventListener('stop', handleStop);
+
+                    // Store video for this slot if slotIndex provided
                     if (slotIndex !== null && liveVideoBlobRef.current) {
                         allVideoBlobs.current[slotIndex] = liveVideoBlobRef.current;
+                        console.log(`📹 Saved video for slot ${slotIndex}`);
                     }
+
                     mediaRecorderRef.current = null;
                     resolve();
                 };
-                recorder.addEventListener("stop", handleStop);
+
+                recorder.addEventListener('stop', handleStop);
                 recorder.stop();
             } else {
                 resolve();
             }
         });
+    };
 
     // ─── Session / frame control ──────────────────────────────────────────────
     const handleStartSession = () => {
@@ -287,24 +218,12 @@ export default function PhotoBooth() {
     };
 
     const handleNameSubmit = () => {
-        let valid = true;
         if (!userName.trim()) {
             setNameError("⚠️ Nama harus diisi!");
-            valid = false;
-        } else {
-            setNameError("");
+            return;
         }
-        if (!userPhone.trim()) {
-            setPhoneError("⚠️ Nomor telepon harus diisi!");
-            valid = false;
-        } else if (!isValidPhone(userPhone)) {
-            setPhoneError("⚠️ Format nomor tidak valid (contoh: 08123456789 atau +62812...)");
-            valid = false;
-        } else {
-            setPhoneError("");
-        }
-        if (!valid) return;
 
+        setNameError("");
         setShowNameInput(false);
         setSessionStarted(true);
         setSessionTimeLeft(180);
@@ -313,6 +232,24 @@ export default function PhotoBooth() {
         setRetakeSlotIndex(null);
         setMode("photo");
     };
+
+    useEffect(() => {
+        if (!sessionStarted) return;
+
+        const timer = setInterval(() => {
+            setSessionTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    setSessionStarted(false);
+                    setCanTakePhoto(false);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [sessionStarted]);
 
     const handleBack = () => {
         if (!selectedFrame) return;
@@ -323,10 +260,9 @@ export default function PhotoBooth() {
         setRetakeSlotIndex(null);
     };
 
-    // ─── Photo logic ──────────────────────────────────────────────────────────
     const getNextAvailableSlot = () => {
-        for (let i = 0; i < SLOTS.length; i++) {
-            if (!photos.some((p) => p.slotIndex === i)) return i;
+        for (let i = 0; i < slots.length; i++) {
+            if (!photos.some(p => p.slotIndex === i)) return i;
         }
         return null;
     };
@@ -340,12 +276,10 @@ export default function PhotoBooth() {
         const drawH = img.height * scale;
         const offsetY = drawH > SLOT_HEIGHT ? (SLOT_HEIGHT - drawH) / 2 : 0;
 
-        setPhotos((prev) => {
-            const filtered = prev.filter((p) => p.slotIndex !== targetSlot);
-            const next = [
-                ...filtered,
-                { img, slotIndex: targetSlot, scale, offsetX: 0, offsetY },
-            ];
+        setPhotos(prev => {
+            const filtered = prev.filter(p => p.slotIndex !== targetSlot);
+            const next = [...filtered, { img, slotIndex: targetSlot, scale, offsetX: 0, offsetY }];
+
             if (next.length === 4) {
                 setMode("decorate");
                 setAllPhotosTaken(true);
@@ -359,7 +293,7 @@ export default function PhotoBooth() {
         setCanTakePhoto(true);
     };
 
-    const takePhotoNow = (slotIndex) => {
+    const takePhotoNow = () => {
         const src = webcamRef.current.getScreenshot();
         if (!src) return;
         const img = new Image();
@@ -367,14 +301,66 @@ export default function PhotoBooth() {
         img.onload = () => addPhoto(img, slotIndex);
     };
 
+    // ============================================================
+    // VIDEO CAPTURE
+    // ============================================================
+    const startShortVideoCapture = () => {
+        const videoElement = webcamRef.current?.video;
+        if (!videoElement) return;
+
+        const stream = videoElement.captureStream
+            ? videoElement.captureStream()
+            : videoElement.mozCaptureStream
+                ? videoElement.mozCaptureStream()
+                : null;
+        if (!stream) return;
+
+        const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+        const recorder = new MediaRecorder(stream, { mimeType });
+        recordedChunksRef.current = [];
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+        };
+
+        recorder.onstop = () => {
+            liveVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: mimeType });
+            recordedChunksRef.current = [];
+        };
+
+        recorder.start();
+        mediaRecorderRef.current = recorder;
+    };
+
+    const stopShortVideoCapture = async (slotIndex = null) => {
+        return new Promise((resolve) => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+                const recorder = mediaRecorderRef.current;
+                const handleStop = () => {
+                    recorder.removeEventListener('stop', handleStop);
+                    if (slotIndex !== null && liveVideoBlobRef.current) {
+                        allVideoBlobs.current[slotIndex] = liveVideoBlobRef.current;
+                    }
+                    mediaRecorderRef.current = null;
+                    resolve();
+                };
+                recorder.addEventListener('stop', handleStop);
+                recorder.stop();
+            } else {
+                resolve();
+            }
+        });
+    };
+
     const capturePhoto = () => {
-        if (!canTakePhoto || countdown !== null || !sessionStarted || sessionTimeLeft <= 0)
-            return;
+        if (!canTakePhoto || countdown !== null || !sessionStarted || sessionTimeLeft <= 0) return;
 
         setCanTakePhoto(false);
         setCountdown(5);
-        const targetSlot =
-            retakeSlotIndex !== null ? retakeSlotIndex : getNextAvailableSlot();
+
+        // Determine which slot will be used
+        const targetSlot = retakeSlotIndex !== null ? retakeSlotIndex : getNextAvailableSlot();
+
         startShortVideoCapture();
 
         let current = 5;
@@ -408,6 +394,8 @@ export default function PhotoBooth() {
         if (selectedPhotoIndex === null) return;
         const photoToReplace = photos[selectedPhotoIndex];
         if (!photoToReplace) return;
+
+        // Tetap di mode decorate, tampilkan kamera untuk retake
         stopVideoPreview();
         setAllPhotosTaken(false);
         setPhotos((prev) => prev.filter((_, idx) => idx !== selectedPhotoIndex));
@@ -417,8 +405,7 @@ export default function PhotoBooth() {
         setShowRetakeCamera(true);
     };
 
-    // ─── Canvas drag ──────────────────────────────────────────────────────────
-    const getCoords = (e) => {
+    const getCoords = e => {
         const r = canvasRef.current.getBoundingClientRect();
         return {
             x: (e.clientX - r.left) * (canvasRef.current.width / r.width),
@@ -435,16 +422,14 @@ export default function PhotoBooth() {
                 const w = p.img.width * p.scale;
                 const h = p.img.height * p.scale;
                 if (
-                    x >= slot.x + p.offsetX &&
-                    x <= slot.x + p.offsetX + w &&
-                    y >= slot.y + p.offsetY &&
-                    y <= slot.y + p.offsetY + h
+                    x >= slot.x + p.offsetX && x <= slot.x + p.offsetX + w &&
+                    y >= slot.y + p.offsetY && y <= slot.y + p.offsetY + h
                 ) {
                     if (mode === "photo") {
                         setDraggingPhoto(i);
                         setDragOffset({
                             x: x - slot.x - p.offsetX,
-                            y: y - slot.y - p.offsetY,
+                            y: y - slot.y - p.offsetY
                         });
                     }
                     setSelectedPhotoIndex(i);
@@ -458,39 +443,95 @@ export default function PhotoBooth() {
     const handleMouseMove = (e) => {
         if (draggingPhoto === null || mode !== "photo") return;
         const { x, y } = getCoords(e);
-        setPhotos((prev) => {
-            const updated = [...prev];
-            const p = updated[draggingPhoto];
-            const slot = SLOTS[p.slotIndex];
-            const w = p.img.width * p.scale;
-            const h = p.img.height * p.scale;
-            p.offsetX = Math.min(Math.max(x - slot.x - dragOffset.x, SLOT_WIDTH - w), 0);
-            p.offsetY = Math.min(Math.max(y - slot.y - dragOffset.y, SLOT_HEIGHT - h), 0);
-            return updated;
-        });
+
+        if (draggingPhoto !== null && mode === "photo") {
+            setPhotos(prev => {
+                const updated = [...prev];
+                const p = updated[draggingPhoto];
+                const slot = slots[p.slotIndex];
+                const w = p.img.width * p.scale;
+                const h = p.img.height * p.scale;
+
+                p.offsetX = x - slot.x - dragOffset.x;
+                p.offsetY = y - slot.y - dragOffset.y;
+                p.offsetX = Math.min(Math.max(p.offsetX, SLOT_WIDTH - w), 0);
+                p.offsetY = Math.min(Math.max(p.offsetY, SLOT_HEIGHT - h), 0);
+
+                return updated;
+            });
+        }
+
     };
 
-    const handleMouseUp = () => setDraggingPhoto(null);
+    const handleMouseUp = () => {
+        setDraggingPhoto(null);
+    };
 
-    // ─── Video preview (dual strip) ───────────────────────────────────────────
-    const drawVideosOnCanvas = (
-        ctx,
-        videoElements,
-        canvasWidth,
-        canvasHeight,
-        frameImg,
-        xOffset = 0,
-        currentPhotos = []
-    ) => {
-        ctx.fillStyle = "#ffffff";
+
+
+    const dataUrlToBlob = (dataUrl) => {
+        const arr = dataUrl.split(',');
+        const mimeMatch = arr[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+    };
+
+    const saveFileToResultsFolder = async (fileName, blob) => {
+        try {
+            // Add username prefix to filename
+            const namePrefix = userName ? `${userName}-` : "";
+            const fullFileName = `${namePrefix}${fileName}`;
+
+            console.log(`📤 Attempting to save: ${fullFileName}`);
+
+            // Send to backend server
+            const response = await fetch('http://localhost:5000/api/save-blob?filename=' + encodeURIComponent(fullFileName), {
+                method: 'POST',
+                body: blob,
+                headers: {
+                    'Content-Type': 'application/octet-stream'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ File saved successfully:', data.message);
+                return;
+            } else {
+                console.error('❌ Save failed, status:', response.status);
+            }
+        } catch (err) {
+            console.error('❌ Error saving to backend:', err);
+        }
+
+        // Fallback: download to browser
+        console.log('📥 Falling back to browser download...');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    // Draw 4 videos simultaneously on a canvas with the selected frame overlay
+    const drawVideosOnCanvas = (ctx, videoElements, canvasWidth, canvasHeight, frameImg, xOffset = 0, currentPhotos = []) => {
+        // Clear with white background to prevent black borders
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(xOffset, 0, canvasWidth, canvasHeight);
 
+        // Draw each video in its slot with clipping
         videoElements.forEach((item) => {
             const slot = SLOTS[item.slotIndex];
             const video = item.video;
-            const fallbackPhoto = currentPhotos.find(
-                (p) => p.slotIndex === item.slotIndex
-            );
+            const fallbackPhoto = currentPhotos.find(p => p.slotIndex === item.slotIndex);
+
             if (slot) {
                 ctx.save();
                 ctx.beginPath();
@@ -502,40 +543,33 @@ export default function PhotoBooth() {
                     const scale = SLOT_WIDTH / vw;
                     const drawH = vh * scale;
                     const offsetY = drawH > SLOT_HEIGHT ? (SLOT_HEIGHT - drawH) / 2 : 0;
-                    ctx.drawImage(
-                        video,
-                        xOffset + slot.x,
-                        slot.y + offsetY,
-                        SLOT_WIDTH,
-                        drawH
-                    );
+                    ctx.drawImage(video, xOffset + slot.x, slot.y + offsetY, SLOT_WIDTH, drawH);
                 } else if (fallbackPhoto) {
                     const drawW = fallbackPhoto.img.width * fallbackPhoto.scale;
                     const drawH = fallbackPhoto.img.height * fallbackPhoto.scale;
-                    ctx.drawImage(
-                        fallbackPhoto.img,
-                        xOffset + slot.x + fallbackPhoto.offsetX,
-                        slot.y + fallbackPhoto.offsetY,
-                        drawW,
-                        drawH
-                    );
+                    const dx = xOffset + slot.x + fallbackPhoto.offsetX;
+                    const dy = slot.y + fallbackPhoto.offsetY;
+                    ctx.drawImage(fallbackPhoto.img, dx, dy, drawW, drawH);
                 }
                 ctx.restore();
             }
         });
 
-        if (frameImg) ctx.drawImage(frameImg, xOffset, 0, canvasWidth, canvasHeight);
+        // Draw frame on top
+        if (frameImg) {
+            ctx.drawImage(frameImg, xOffset, 0, canvasWidth, canvasHeight);
+        }
+
+        // Draw username if exists
+        if (userName) {
+            ctx.fillStyle = '#8c5b4a';
+            ctx.font = 'bold 42px CantikaCute, Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(userName, xOffset + (canvasWidth / 2), canvasHeight - 35);
+        }
     };
 
-    useEffect(() => {
-        if (allPhotosTaken && Object.keys(allVideoBlobs.current).length > 0) {
-            startVideoPreview();
-        } else {
-            stopVideoPreview();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [allPhotosTaken]);
-
+    // Start live video preview on the dedicated preview canvas
     const startVideoPreview = async () => {
         if (!frameImgRef.current) return;
         stopVideoPreview();
@@ -544,13 +578,14 @@ export default function PhotoBooth() {
         const canvasWidth = frameImg.width;
         const canvasHeight = frameImg.height;
 
-        // Placeholder segera dari foto statis
+        // 🚀 Optimasi: Gambar placeholder (foto statis) ke canvas video segera mungkin
         const previewCanvas = videoPreviewCanvasRef.current;
         const photoCanvas = canvasRef.current;
         if (previewCanvas && photoCanvas) {
             previewCanvas.width = canvasWidth * 2;
             previewCanvas.height = canvasHeight;
-            const ctx = previewCanvas.getContext("2d");
+            const ctx = previewCanvas.getContext('2d');
+            // Gambar foto duplikat sebagai placeholder agar tidak ada black screen
             ctx.drawImage(photoCanvas, 0, 0);
             ctx.drawImage(photoCanvas, canvasWidth, 0);
         }
@@ -567,28 +602,35 @@ export default function PhotoBooth() {
             document.body.appendChild(video);
             videoElements.push({ video, slotIndex: i });
         }
-        if (videoElements.length === 0) return;
+
+        if (videoElements.length === 0) {
+            console.log('No videos available for preview');
+            return;
+        }
+
         videoPreviewElementsRef.current = videoElements;
 
-        await Promise.all(
-            videoElements.map(
-                (item) =>
-                    new Promise((resolve) => {
-                        if (item.video.readyState >= 3) { resolve(); return; }
-                        item.video.addEventListener("canplay", resolve, { once: true });
-                        item.video.load();
-                    })
-            )
-        );
-        await Promise.all(videoElements.map((item) => item.video.play().catch(() => {})));
+        // Wait for all videos to be ready
+        await Promise.all(videoElements.map(item =>
+            new Promise(resolve => {
+                if (item.video.readyState >= 3) { resolve(); return; }
+                item.video.addEventListener('canplay', resolve, { once: true });
+                item.video.load();
+            })
+        ));
 
+        // Play all videos
+        await Promise.all(videoElements.map(item => item.video.play().catch(() => { })));
+
+        // Animate dual video strip preview
         const previewCanvas2 = videoPreviewCanvasRef.current;
         if (!previewCanvas2) return;
         previewCanvas2.width = canvasWidth * 2;
         previewCanvas2.height = canvasHeight;
-        const ctx = previewCanvas2.getContext("2d");
+        const ctx = previewCanvas2.getContext('2d');
 
-        const offscreen = document.createElement("canvas");
+        // Optimize: Draw once to offscreen canvas, then copy twice to reduce draw calls by 50%
+        const offscreen = document.createElement('canvas');
         offscreen.width = canvasWidth;
         offscreen.height = canvasHeight;
         const offCtx = offscreen.getContext("2d", { alpha: false });
@@ -602,12 +644,15 @@ export default function PhotoBooth() {
             if (elapsed > fpsInterval) {
                 lastTime = time - (elapsed % fpsInterval);
                 drawVideosOnCanvas(offCtx, videoElements, canvasWidth, canvasHeight, frameImg, 0, photos);
+                
+                // Draw offscreen twice to main canvas
                 ctx.drawImage(offscreen, 0, 0);
                 ctx.drawImage(offscreen, canvasWidth, 0);
             }
         };
         videoPreviewAnimRef.current = requestAnimationFrame(animate);
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [drawVideosOnCanvas, photos]);
 
     const stopVideoPreview = () => {
         if (videoPreviewAnimRef.current) {
@@ -622,11 +667,14 @@ export default function PhotoBooth() {
         videoPreviewElementsRef.current = [];
     };
 
-    // ─── Create combined video (MP4/WebM) for export ──────────────────────────
-    const createCombinedVideoBlob = () =>
-        new Promise(async (resolve) => {
+    const createCombinedVideoFrame = async () => {
+        return new Promise(async (resolve) => {
             try {
-                if (!frameImgRef.current) { resolve(null); return; }
+                if (!frameImgRef.current || !selectedFrame) {
+                    console.log('No frame selected for video');
+                    resolve(null);
+                    return;
+                }
 
                 const frameImg = frameImgRef.current;
                 const videoDuration = 5;
@@ -638,6 +686,7 @@ export default function PhotoBooth() {
                 recordCanvas.height = canvasHeight;
                 const ctx = recordCanvas.getContext("2d");
 
+                // Create video elements for recording
                 const videoElements = [];
                 for (let i = 0; i < 4; i++) {
                     if (!allVideoBlobs.current[i]) continue;
@@ -650,19 +699,23 @@ export default function PhotoBooth() {
                     document.body.appendChild(video);
                     videoElements.push({ video, slotIndex: i });
                 }
-                if (videoElements.length === 0) { resolve(null); return; }
 
-                await Promise.all(
-                    videoElements.map(
-                        (item) =>
-                            new Promise((r) => {
-                                if (item.video.readyState >= 3) { r(); return; }
-                                item.video.addEventListener("canplay", r, { once: true });
-                                item.video.load();
-                            })
-                    )
-                );
+                if (videoElements.length === 0) {
+                    console.log('No videos to combine');
+                    resolve(null);
+                    return;
+                }
 
+                // Wait for videos to load
+                await Promise.all(videoElements.map(item =>
+                    new Promise(r => {
+                        if (item.video.readyState >= 3) { r(); return; }
+                        item.video.addEventListener('canplay', r, { once: true });
+                        item.video.load();
+                    })
+                ));
+
+                // Start recording canvas stream
                 const stream = recordCanvas.captureStream(30);
                 const mimeType = MediaRecorder.isTypeSupported("video/mp4")
                     ? "video/mp4"
@@ -679,6 +732,7 @@ export default function PhotoBooth() {
                     if (e.data.size > 0) chunks.push(e.data);
                 };
                 mediaRecorder.onstop = () => {
+                    setVideoProgress({ stage: 'Encoding', percent: 88 });
                     const blob = new Blob(chunks, { type: mimeType });
                     videoElements.forEach((item) => {
                         item.video.pause();
@@ -689,14 +743,16 @@ export default function PhotoBooth() {
                     resolve(blob);
                 };
 
-                await Promise.all(videoElements.map((item) => item.video.play().catch(() => {})));
+                // Play all videos simultaneously then start recording
+                await Promise.all(videoElements.map(item => item.video.play().catch(() => { })));
 
-                const offscreen = document.createElement("canvas");
+                // Optimize rendering for recording
+                const offscreen = document.createElement('canvas');
                 offscreen.width = canvasWidth;
                 offscreen.height = canvasHeight;
                 const offCtx = offscreen.getContext("2d", { alpha: false });
 
-                // Frame awal sebelum recorder mulai
+                // Draw first frame immediately before mediaRecorder starts to avoid white screen
                 drawVideosOnCanvas(offCtx, videoElements, canvasWidth, canvasHeight, frameImg, 0, photos);
                 ctx.drawImage(offscreen, 0, 0);
                 ctx.drawImage(offscreen, canvasWidth, 0);
@@ -705,6 +761,14 @@ export default function PhotoBooth() {
                 let active = true;
                 let lastTime = 0;
                 const fpsInterval = 1000 / 30;
+
+                // Progress updates during recording
+                const startTime = Date.now();
+                const progressInterval = setInterval(() => {
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const pct = 35 + (elapsed / videoDuration) * 45;
+                    setVideoProgress({ stage: 'Rendering', percent: Math.min(Math.round(pct), 80) });
+                }, 250);
 
                 const recordAnimate = (time) => {
                     if (!active) return;
@@ -720,8 +784,8 @@ export default function PhotoBooth() {
                 requestAnimationFrame(recordAnimate);
 
                 setTimeout(() => {
-                    active = false;
-                    videoElements.forEach((item) => item.video.pause());
+                    recordingActive = false;
+                    videoElements.forEach(item => item.video.pause());
                     mediaRecorder.stop();
                 }, videoDuration * 1000);
             } catch (err) {
@@ -729,87 +793,51 @@ export default function PhotoBooth() {
                 resolve(null);
             }
         });
+    };
 
-    // ─── Create combined photo (JPG) for export, WITH cutting guide ───────────
-    const createCombinedPhotoBlob = () => {
+
+    // Buat URL foto strip yang diduplikat (foto | foto)
+    const createDuplicatedPhotoUrl = () => {
         const photoCanvas = canvasRef.current;
         if (!photoCanvas) return null;
-
-        const W = photoCanvas.width;
-        const H = photoCanvas.height;
-        const combined = document.createElement("canvas");
-        combined.width = W * 2;
-        combined.height = H;
-        const ctx = combined.getContext("2d");
-
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, combined.width, combined.height);
+        const dupCanvas = document.createElement('canvas');
+        dupCanvas.width = photoCanvas.width * 2;
+        dupCanvas.height = photoCanvas.height;
+        const ctx = dupCanvas.getContext('2d');
         ctx.drawImage(photoCanvas, 0, 0);
-        ctx.drawImage(photoCanvas, W, 0);
-
-        // Cutting guide hanya di file export
-        drawCuttingGuide(ctx, combined.width, combined.height);
-
-        // Kembalikan sebagai JPG berkualitas tinggi
-        return new Promise((resolve) => {
-            combined.toBlob(resolve, "image/jpeg", 0.95);
-        });
+        ctx.drawImage(photoCanvas, photoCanvas.width, 0);
+        return dupCanvas.toDataURL('image/png');
     };
 
-    // ─── Save file ke backend / fallback download ─────────────────────────────
-    const saveFile = async (filename, blob) => {
-        try {
-            const resp = await fetch(
-                `http://localhost:5000/api/save-blob?filename=${encodeURIComponent(filename)}`,
-                {
-                    method: "POST",
-                    body: blob,
-                    headers: { "Content-Type": "application/octet-stream" },
-                }
-            );
-            if (resp.ok) return;
-        } catch (_) {
-            // fallback ke download
-        }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-    };
-
-    // ─── Handle final save ────────────────────────────────────────────────────
     const handleFinalSave = async () => {
         if (isSaving || showSuccessPopup) return;
         setIsSaving(true);
-        setSaveProgress(0);
+        console.log('🎬 Saving files directly...');
 
-        // Buat nama file dari nama + telepon
-        const safeName = sanitizeFilename(userName);
-        const safePhone = normalizePhone(userPhone).replace(/\+/g, "");
-        const fileBase = safeName && safePhone ? `${safeName}${safePhone}` : `photo-${Date.now()}`;
-
-        // 1. Simpan foto JPG (40%)
-        setSaveProgress(10);
-        const photoBlob = await createCombinedPhotoBlob();
-        if (photoBlob) await saveFile(`${fileBase}.jpg`, photoBlob);
-        setSaveProgress(40);
-
-        // 2. Simpan video (40% → 90%)
-        const videoBlob = await createCombinedVideoBlob();
-        setSaveProgress(90);
-        if (videoBlob) {
-            const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
-            await saveFile(`${fileBase}.${ext}`, videoBlob);
+        // Simpan foto duplikat (PNG)
+        const photoUrl = createDuplicatedPhotoUrl();
+        if (photoUrl) {
+            const blob = dataUrlToBlob(photoUrl);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            await saveFileToResultsFolder(`photo-${timestamp}.png`, blob);
         }
 
-        setSaveProgress(100);
+        // Simpan video duplikat (MP4 or WebM)
+        const videoBlob = await createCombinedVideoFrame();
+        if (videoBlob) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const ext = videoBlob.type === 'video/mp4' ? 'mp4' : 'webm';
+            await saveFileToResultsFolder(`video-${timestamp}.${ext}`, videoBlob);
+        }
+
+        console.log('✅ Files saved!');
         setIsSaving(false);
         setShowSuccessPopup(true);
 
         setTimeout(() => {
+            setVideoProgress(null);
             setShowSuccessPopup(false);
+            // Cleanup
             stopVideoPreview();
             allVideoBlobs.current = {};
             setSessionStarted(false);
@@ -823,128 +851,203 @@ export default function PhotoBooth() {
             setCountdown(null);
             setSessionTimeLeft(180);
             setUserName("");
-            setUserPhone("");
             setAllPhotosTaken(false);
             setShowRetakeCamera(false);
-        }, 2500);
+        }, 2000);
     };
 
-    // ─── Derived values ───────────────────────────────────────────────────────
-    const showRetakeButton =
-        selectedPhotoIndex !== null && photos[selectedPhotoIndex];
+    useEffect(() => {
+        if (sessionStarted && sessionTimeLeft === 0 && !isSaving && !showSuccessPopup) {
+            handleFinalSave();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionTimeLeft, sessionStarted, isSaving, showSuccessPopup]);
 
-    // ─── RENDER ───────────────────────────────────────────────────────────────
+    const showRetakeButton = selectedPhotoIndex !== null && photos[selectedPhotoIndex];
+
+    // Auto-start/stop video preview based on allPhotosTaken
+    useEffect(() => {
+        if (allPhotosTaken && Object.keys(allVideoBlobs.current).length > 0) {
+            startVideoPreview();
+        } else {
+            stopVideoPreview();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [allPhotosTaken]);
+
+
+
     return (
-        <div style={styles.centerCol}>
-            {/* ── TOP BAR ── */}
-            <div style={styles.topBar}>
+        <div style={centerCol}>
+            <div style={topBar}>
                 {selectedFrame && (
-                    <button style={{ ...styles.button, position: "absolute", left: 0, top: 10, height: 44, padding: "0 20px" }} onClick={handleBack}>
-                        ← Back
-                    </button>
+                    <button
+                        style={{
+                            ...buttonStyle,
+                            position: "absolute",
+                            left: 0,
+                            top: 10,
+                            height: 40,
+                            padding: "0 16px",
+                            lineHeight: "40px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                        }}
+                        onClick={handleBack}
+                    > ← Back</button>
                 )}
+
                 {sessionStarted && (
-                    <div style={styles.timerBadge}>{formatTime(sessionTimeLeft)}</div>
+                    <div style={{
+                        position: "absolute",
+                        right: 0,
+                        top: 10,
+                        padding: "12px 22px",
+                        borderRadius: 999,
+                        background: "#fff0f4",
+                        border: "2px solid #ff7aa2",
+                        color: "#8c5b4a",
+                        fontWeight: "bold",
+                        fontSize: 32,
+                        minWidth: 110,
+                        textAlign: "center",
+                        boxShadow: "0 8px 18px rgba(255, 122, 162, 0.2)",
+                    }}>
+                        {formatTime(sessionTimeLeft)}
+                    </div>
                 )}
-                <h1 style={styles.titleBar}>
+
+                {/* ============================================================
+                     📝 NAMA PHOTOBOOTH — Ganti teks di bawah ini:
+                     Teks pada h1 di bawah adalah judul yang tampil di halaman
+                     - Baris pertama  : teks saat pilih frame
+                     - Baris kedua    : teks saat sesi foto
+                     - Baris ketiga   : teks saat mode decorate/review
+                ============================================================ */}
+                <h1 style={titleBar}>
                     {!selectedFrame
-                        ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"
+                        ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"      // ← GANTI: judul utama / nama photobooth
                         : mode === "photo"
-                        ? "⋆｡‧˚ʚ Smile :)ɞ˚‧｡⋆"
-                        : ". ݁₊ ⊹ . ݁Let's decorate . ⊹ ₊ ݁."}
+                            ? "⋆｡‧˚ʚ Smile :)ɞ˚‧｡⋆"            // ← GANTI: teks saat ambil foto
+                            : ". ݁₊ ⊹ . ݁Let's decorate . ⊹ ₊ ݁."}  {/* ← GANTI: teks saat review */}
                 </h1>
             </div>
 
-            {/* ── MAIN CONTENT ── */}
-            <div style={styles.mainContent}>
+            <div style={mainContent} >
                 {!selectedFrame ? (
-                    /* ── FRAME PICKER / START ── */
                     !sessionStarted ? (
-                        <div style={styles.col}>
-                            <button
-                                style={{ ...styles.button, fontSize: 44, padding: "20px 60px" }}
-                                onClick={handleStartSession}
-                            >
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+                            <button style={{ ...buttonStyle, fontSize: 24, padding: "12px 26px" }} onClick={handleStartSession}>
                                 Start
                             </button>
                         </div>
                     ) : (
-                        <div style={styles.col}>
-                            <div style={{ fontSize: 52, color: "#8c5b4a", fontWeight: "bold", marginTop: 10 }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+                            <div style={{ fontSize: 40, color: "#8c5b4a", fontWeight: "bold", marginTop: 10 }}>
                                 Pilih frame kamu
                             </div>
-                            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "center" }}>
-                                {TEMPLATE.frames.map((src) => (
-                                    <img
-                                        key={src}
-                                        src={src}
-                                        alt="frame"
-                                        onClick={() => { setSelectedFrame(src); setCanTakePhoto(true); }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                                        style={{
-                                            ...styles.frameThumb,
-                                            transform: selectedFrame === src ? "scale(1.08)" : "scale(1)",
-                                            boxShadow: selectedFrame === src ? "0 12px 30px rgba(255,122,162,0.45)" : styles.frameThumb.boxShadow,
-                                        }}
-                                    />
-                                ))}
+                            <div style={{ display: "flex", gap: 24 }}>
+                                {frameOptions.map((src) => {
+                                    const isSelected = selectedFrame === src;
+
+                                    return (
+                                        <img
+                                            key={src}
+                                            src={src}
+                                            alt="frame"
+                                            onClick={() => {
+                                                setSelectedFrame(src);
+                                                setCanTakePhoto(true);
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.transform = "scale(1.08)";
+                                                e.currentTarget.style.boxShadow = "0 12px 30px rgba(255,122,162,0.45)";
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = "scale(1)";
+                                                e.currentTarget.style.boxShadow = frameThumb.boxShadow;
+                                            }}
+                                            style={{
+                                                ...frameThumb,
+                                                width: 260,
+                                                transform: isSelected ? "scale(1.08)" : "scale(1)",
+                                                transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                                                boxShadow: isSelected ? "0 12px 30px rgba(255,122,162,0.45)" : frameThumb.boxShadow,
+                                            }}
+                                        />
+                                    )
+                                })}
                             </div>
                         </div>
                     )
                 ) : (
-                    /* ── PHOTO SESSION / DECORATE ── */
-                    <div style={{ ...styles.row, justifyContent: "center", alignItems: "stretch" }}>
-                        {/* LEFT: webcam */}
+                    <div style={{ ...row, justifyContent: "center", alignItems: "stretch" }}>
+
+                        {/* LEFT PANEL */}
                         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start" }}>
+
+                            {/* Kamera: tampil di mode photo ATAU saat retake di mode decorate */}
                             {(mode === "photo" || showRetakeCamera) && (
                                 <>
                                     <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                                        <div style={{ position: "relative", width: 1280, maxWidth: "100%" }}>
+                                        <div style={{ position: "relative", width: 980, maxWidth: "100%" }}>
                                             <Webcam
                                                 audio={false}
                                                 ref={webcamRef}
                                                 screenshotFormat="image/png"
                                                 videoConstraints={videoConstraints}
                                                 mirrored={true}
-                                                style={{ width: "100%", borderRadius: 18, objectFit: "cover" }}
+                                                style={{ width: "100%", height: "100%", borderRadius: 18, objectFit: "cover" }}
                                             />
                                             {countdown != null && (
-                                                <div style={styles.countdownOverlay}>{countdown}</div>
+                                                <div style={{
+                                                    position: "absolute", inset: 0,
+                                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                                    fontSize: 96, fontWeight: "bold", color: "white",
+                                                    textShadow: "0 4px 20px rgba(0,0,0,0.6)",
+                                                    background: "rgba(0,0,0,0.25)", borderRadius: 12, pointerEvents: "none",
+                                                }}>
+                                                    {countdown}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
-                                    <div style={{ marginTop: 20, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+
+                                    <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
                                         {canTakePhoto && sessionStarted && (
-                                            <button style={styles.button} onClick={capturePhoto}>
+                                            <button style={buttonStyle} onClick={capturePhoto}>
                                                 {showRetakeCamera ? "📷 Ambil Foto" : "Take Photo"}
                                             </button>
                                         )}
                                         {photoCount > 0 && mode === "photo" && (
-                                            <button style={{ ...styles.button, fontSize: 24, padding: "6px 14px" }} onClick={redoLastPhoto}>
-                                                ⟳
-                                            </button>
+                                            <button style={{ ...buttonStyle, fontSize: 22, padding: "4px 10px" }} onClick={redoLastPhoto}>⟳</button>
                                         )}
                                         {showRetakeButton && mode === "photo" && (
-                                            <button style={{ ...styles.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>
+                                            <button style={{ ...buttonStyle, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>
                                                 Retake selected
                                             </button>
                                         )}
+
                                     </div>
                                 </>
                             )}
 
+                            {/* Mode decorate: hint retake */}
                             {mode === "decorate" && !showRetakeCamera && (
-                                <div style={styles.col}>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, paddingTop: 20 }}>
                                     {showRetakeButton ? (
                                         <div style={{ textAlign: "center" }}>
-                                            <div style={{ fontSize: 18, color: "#8c5b4a", marginBottom: 12 }}>Foto dipilih — mau diganti?</div>
-                                            <button style={{ ...styles.button, background: "#fff0f4", fontSize: 18 }} onClick={retakeSelectedPhoto}>
+                                            <div style={{ fontSize: 14, color: "#8c5b4a", marginBottom: 10 }}>
+                                                Foto dipilih — mau diganti?
+                                            </div>
+                                            <button style={{ ...buttonStyle, background: "#fff0f4", fontSize: 16 }}
+                                                onClick={retakeSelectedPhoto}>
                                                 📷 Retake foto ini
                                             </button>
                                         </div>
                                     ) : (
-                                        <div style={{ fontSize: 16, color: "#b08a80", textAlign: "center", maxWidth: 300 }}>
+                                        <div style={{ fontSize: 13, color: "#b08a80", textAlign: "center", maxWidth: 300 }}>
                                             💡 Klik foto di strip untuk memilih dan retake
                                         </div>
                                     )}
@@ -952,11 +1055,11 @@ export default function PhotoBooth() {
                             )}
                         </div>
 
-                        {/* RIGHT: preview strip */}
-                        <div style={{ display: "flex", flexDirection: "row", gap: 20, alignItems: "flex-start" }}>
-                            {/* Foto strip */}
+                        {/* RIGHT PANEL: foto strip + video preview */}
+                        <div style={{ display: "flex", flexDirection: "row", gap: 16, alignItems: "flex-start" }}>
+                            {/* Photo strip canvas (Duplicated view) */}
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                <div style={styles.previewLabel}>📸 Foto</div>
+                                <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>📸 Foto</div>
                                 <div style={{
                                     display: "flex",
                                     boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
@@ -966,23 +1069,39 @@ export default function PhotoBooth() {
                                 }}>
                                     <canvas
                                         ref={canvasRef}
-                                        style={{ width: 290, height: 760, display: "block", cursor: mode === "decorate" ? "pointer" : "default" }}
+                                        style={{
+                                            width: 290, height: 760,
+                                            display: "block",
+                                            cursor: mode === "decorate" ? "pointer" : "default",
+                                        }}
                                         onMouseDown={handleMouseDown}
                                         onMouseMove={handleMouseMove}
                                         onMouseUp={handleMouseUp}
                                     />
                                     {mode === "decorate" && (
-                                        <canvas ref={dupCanvasRef} style={{ width: 290, height: 760, display: "block" }} />
+                                        <canvas
+                                            ref={dupCanvasRef}
+                                            style={{
+                                                width: 290, height: 760,
+                                                display: "block",
+                                            }}
+                                        />
                                     )}
                                 </div>
                             </div>
 
-                            {/* Video preview */}
+                            {/* Video preview (dual strip) */}
                             {allPhotosTaken && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                    <div style={styles.previewLabel}>🎬 Video</div>
+                                    <div style={{ fontSize: 16, color: "#8c5b4a", marginBottom: 8, fontWeight: "bold", letterSpacing: 1 }}>🎬 Video</div>
                                     <div style={{ position: "relative", width: 580, height: 760, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                        <canvas ref={videoPreviewCanvasRef} style={{ width: 580, height: 760, display: "block" }} />
+                                        <canvas
+                                            ref={videoPreviewCanvasRef}
+                                            style={{
+                                                width: 580, height: 760,
+                                                display: "block",
+                                            }}
+                                        />
                                     </div>
                                 </div>
                             )}
@@ -991,7 +1110,7 @@ export default function PhotoBooth() {
                             {mode === "decorate" && allPhotosTaken && (
                                 <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
                                     <button
-                                        style={{ ...styles.button, fontSize: 30, padding: "16px 34px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
+                                        style={{ ...buttonStyle, fontSize: 28, padding: "14px 30px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
                                         onClick={handleFinalSave}
                                         disabled={isSaving}
                                     >
@@ -1004,217 +1123,164 @@ export default function PhotoBooth() {
                 )}
             </div>
 
-            {/* ── MODAL: INPUT NAMA & TELEPON ── */}
+
+            {/* Name Input Modal */}
             {showNameInput && (
-                <div style={styles.modalOverlay}>
-                    <div style={styles.modalBox}>
-                        <h2 style={{ margin: "0 0 28px 0", color: "#8c5b4a", fontSize: 40 }}>
-                            Data Peserta
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(0, 0, 0, 0.6)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 999,
+                }}>
+                    <div style={{
+                        background: "white",
+                        padding: "40px",
+                        borderRadius: 20,
+                        textAlign: "center",
+                        boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                        minWidth: 400,
+                    }}>
+                        <h2 style={{ margin: "0 0 20px 0", color: "#8c5b4a", fontSize: 28 }}>
+                            Masukkan Nama Kamu
                         </h2>
 
-                        {/* Nama */}
-                        <label style={styles.inputLabel}>Nama</label>
                         <input
                             type="text"
-                            placeholder="Nama lengkap..."
+                            placeholder="Nama..."
                             value={userName}
-                            onChange={(e) => { setUserName(e.target.value); setNameError(""); }}
-                            onKeyPress={(e) => { if (e.key === "Enter") document.getElementById("input-phone")?.focus(); }}
-                            style={{ ...styles.input, borderColor: nameError ? "#ff6b6b" : "#ff7aa2", marginBottom: nameError ? 6 : 20 }}
+                            onChange={(e) => {
+                                setUserName(e.target.value);
+                                setNameError("");
+                            }}
+                            onKeyPress={(e) => {
+                                if (e.key === 'Enter') handleNameSubmit();
+                            }}
+                            style={{
+                                width: "100%",
+                                padding: "12px 16px",
+                                fontSize: 18,
+                                border: "2px solid #ff7aa2",
+                                borderRadius: 10,
+                                boxSizing: "border-box",
+                                marginBottom: nameError ? 10 : 20,
+                                fontFamily: "CantikaCute",
+                            }}
                             autoFocus
                         />
-                        {nameError && <div style={styles.errorText}>{nameError}</div>}
 
-                        {/* Nomor Telepon */}
-                        <label style={styles.inputLabel}>Nomor Telepon</label>
-                        <input
-                            id="input-phone"
-                            type="tel"
-                            placeholder="08123456789 atau +62812..."
-                            value={userPhone}
-                            onChange={(e) => { setUserPhone(e.target.value); setPhoneError(""); }}
-                            onKeyPress={(e) => { if (e.key === "Enter") handleNameSubmit(); }}
-                            style={{ ...styles.input, borderColor: phoneError ? "#ff6b6b" : "#ff7aa2", marginBottom: phoneError ? 6 : 24 }}
-                        />
-                        {phoneError && <div style={styles.errorText}>{phoneError}</div>}
+                        {nameError && (
+                            <div style={{
+                                color: "#ff6b6b",
+                                fontSize: 16,
+                                marginBottom: 20,
+                                fontWeight: "bold",
+                            }}>
+                                {nameError}
+                            </div>
+                        )}
 
-                        <button style={{ ...styles.button, fontSize: 28, padding: "16px 40px", width: "100%" }} onClick={handleNameSubmit}>
-                            OK — Mulai Sesi
+                        <button
+                            style={{
+                                ...buttonStyle,
+                                fontSize: 20,
+                                padding: "12px 32px",
+                                width: "100%",
+                            }}
+                            onClick={handleNameSubmit}
+                        >
+                            OK
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* ── MODAL: SAVING / SUCCESS ── */}
+            {/* Loading & Success Popups */}
             {(isSaving || showSuccessPopup) && (
-                <div style={styles.modalOverlay}>
-                    <div style={{ ...styles.modalBox, padding: "50px 80px" }}>
-                        <div style={{ fontSize: 72, marginBottom: 20 }}>{isSaving ? "⏳" : "✅"}</div>
-                        <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 42, fontFamily: "CantikaCute" }}>
-                            {isSaving ? "Mohon tunggu..." : "Berhasil disimpan!"}
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(0, 0, 0, 0.6)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 2000,
+                }}>
+                    <div style={{
+                        background: "white",
+                        padding: "50px 80px",
+                        borderRadius: 24,
+                        textAlign: "center",
+                        boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                    }}>
+                        <div style={{ fontSize: 64, marginBottom: 20 }}>
+                            {isSaving ? "⏳" : "✅"}
+                        </div>
+                        <h2 style={{ margin: 0, color: "#8c5b4a", fontSize: 32, fontFamily: "CantikaCute" }}>
+                            {isSaving ? "Mohon tunggu, sedang menyimpan..." : "Berhasil! Selesai disimpan."}
                         </h2>
-                        {isSaving && (
-                            <div style={styles.progressBarWrap}>
-                                <div style={{ ...styles.progressBarFill, width: `${saveProgress}%` }} />
-                            </div>
-                        )}
-                        {isSaving && (
-                            <div style={{ fontSize: 18, color: "#b08a80", marginTop: 10 }}>{saveProgress}%</div>
-                        )}
                     </div>
                 </div>
             )}
         </div>
-    );
+    )
 }
 
-// ─── STYLES ───────────────────────────────────────────────────────────────────
-const styles = {
-    centerCol: {
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 20,
-    },
-    topBar: {
-        width: "min(1600px, 98vw)",
-        height: 110,
-        position: "relative",
-        marginBottom: 20,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    titleBar: {
-        margin: 0,
-        lineHeight: "110px",
-        textAlign: "center",
-        width: "100%",
-        fontSize: 60,
-        fontFamily: "CantikaCute, cursive",
-        color: "#8c5b4a",
-    },
-    timerBadge: {
-        position: "absolute",
-        right: 0,
-        top: 12,
-        padding: "14px 28px",
-        borderRadius: 999,
-        background: "#fff0f4",
-        border: "2px solid #ff7aa2",
-        color: "#8c5b4a",
-        fontWeight: "bold",
-        fontSize: 44,
-        minWidth: 140,
-        textAlign: "center",
-        boxShadow: "0 8px 18px rgba(255,122,162,0.2)",
-    },
-    button: {
-        padding: "16px 32px",
-        fontSize: 30,
-        cursor: "pointer",
-        fontFamily: "CantikaCute, cursive",
-        color: "#8c5b4a",
-        border: "2px solid #8c5b4a",
-        borderRadius: 12,
-        background: "white",
-        transition: "opacity 0.2s",
-    },
-    row: { display: "flex", gap: 50, alignItems: "flex-start" },
-    col: { display: "flex", flexDirection: "column", alignItems: "center", gap: 24 },
-    frameThumb: {
-        width: 320,
-        cursor: "pointer",
-        borderRadius: 14,
-        boxShadow: "0 8px 8px rgba(0,0,0,0.15)",
-        transition: "transform 0.25s ease, box-shadow 0.25s ease",
-    },
-    mainContent: {
-        width: "min(1600px, 98vw)",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "flex-start",
-        minHeight: 900,
-    },
-    previewLabel: {
-        fontSize: 26,
-        color: "#8c5b4a",
-        marginBottom: 12,
-        fontWeight: "bold",
-        letterSpacing: 1,
-    },
-    countdownOverlay: {
-        position: "absolute",
-        inset: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 160,
-        fontWeight: "bold",
-        color: "white",
-        textShadow: "0 4px 20px rgba(0,0,0,0.6)",
-        background: "rgba(0,0,0,0.25)",
-        borderRadius: 18,
-        pointerEvents: "none",
-    },
-    // Modal
-    modalOverlay: {
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 999,
-    },
-    modalBox: {
-        background: "white",
-        padding: "52px 56px",
-        borderRadius: 24,
-        textAlign: "center",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-        minWidth: 520,
-        maxWidth: "92vw",
-    },
-    inputLabel: {
-        display: "block",
-        textAlign: "left",
-        fontSize: 26,
-        fontWeight: "bold",
-        color: "#8c5b4a",
-        marginBottom: 10,
-        fontFamily: "CantikaCute, cursive",
-    },
-    input: {
-        width: "100%",
-        padding: "18px 22px",
-        fontSize: 26,
-        border: "2px solid #ff7aa2",
-        borderRadius: 12,
-        boxSizing: "border-box",
-        fontFamily: "CantikaCute, cursive",
-        outline: "none",
-    },
-    errorText: {
-        color: "#ff6b6b",
-        fontSize: 16,
-        marginBottom: 16,
-        fontWeight: "bold",
-        textAlign: "left",
-    },
-    // Progress bar
-    progressBarWrap: {
-        width: "100%",
-        height: 16,
-        background: "#ffe0ea",
-        borderRadius: 999,
-        overflow: "hidden",
-        marginTop: 10,
-    },
-    progressBarFill: {
-        height: "100%",
-        background: "linear-gradient(90deg, #ff7aa2, #ffb3c6)",
-        borderRadius: 999,
-        transition: "width 0.4s ease",
-    },
+// styles
+const centerCol = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 20
 };
+const topBar = {
+    width: 900,
+    height: 80,
+    position: "relative",
+    marginBottom: 20,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+}
+const buttonStyle = {
+    padding: "10px 20px",
+    fontSize: 20,
+    cursor: "pointer",
+    fontFamily: "CantikaCute",
+    color: "#8c5b4a",
+    border: "2px solid #8c5b4a",
+    borderRadius: 8,
+    background: "white"
+};
+
+const row = { display: "flex", gap: 50, alignItems: "flex-start" };
+const frameThumb = {
+    width: 240,
+    cursor: "pointer",
+    borderRadius: 14,
+    boxShadow: "0 8px 8px rgba(0,0,0,0.15)"
+};
+
+const titleBar = {
+    margin: 0,
+    lineHeight: "80px",
+    textAlign: "center",
+    width: "100%",
+    fontSize: 36,
+}
+
+const mainContent = {
+    height: 700,
+    width: 900,
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "flex-start",
+}

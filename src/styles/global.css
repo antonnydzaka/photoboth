@@ -1,6 +1,6 @@
 @font-face {
   font-family: "CantikaCute";
-  src: url("../../public/assets/fonts/Cantika\ Cute\ Handwriting.otf") format("opentype");
+  src: url("../../public/assets/fonts/Cantika Cute Handwriting.otf") format("opentype");
   font-weight: normal;
   font-style: normal;
 }
@@ -12,57 +12,10 @@
 body {
   font-family: "CantikaCute", cursive, sans-serif;
   color: #8c5b4a;
-  background-image: url("https://i.pinimg.com/736x/31/09/57/31095750b876ce6f8f9cd46f0c474417.jpg");
+  background-color: #ffffff;
+  background-image: url("../../public/assets/backgrounds/default-bg.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
-}
-
-/* ── INPUT FOCUS ── */
-input:focus {
-  outline: none;
-  border-color: #ff7aa2 !important;
-  box-shadow: 0 0 0 3px rgba(255, 122, 162, 0.2);
-}
-
-/* ── RESPONSIVE ── */
-
-/* Tablet: ≤ 1024px */
-@media (max-width: 1024px) {
-  .App > div:first-child {
-    padding: 16px 20px !important;
-  }
-}
-
-/* Mobile: ≤ 768px */
-@media (max-width: 768px) {
-  /* Paksa flex column di mobile */
-  .photobooth-row {
-    flex-direction: column !important;
-    align-items: center !important;
-  }
-
-  /* Preview strip full width */
-  .photobooth-strip-row {
-    flex-direction: column !important;
-    align-items: center !important;
-    gap: 20px !important;
-  }
-
-  /* Header lebih kecil */
-  .App > div:first-child h1 {
-    font-size: 28px !important;
-  }
-}
-
-/* Tombol hover effect */
-button:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-button:active:not(:disabled) {
-  transform: scale(0.97);
+  background-size: 100%;
 }
