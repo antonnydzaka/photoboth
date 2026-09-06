@@ -507,11 +507,13 @@ export default function PhotoBooth() {
         const mainCtx   = previewCanvas.getContext("2d");
         const photosSnap = photos.slice();
 
-        // Capture freeze frame awal (frame pertama video di detik 0)
-        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
+        const photoOnlyElements = videoElements.map(item => ({ video: null, slotIndex: item.slotIndex }));
+
+        // Capture freeze frame awal (berupa foto)
+        drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
 
-        // Dapatkan durasi video untuk freeze end
+        // Dapatkan durasi video
         let videoDuration = 5;
         videoElements.forEach((item) => {
             const dur = item.video.duration;
@@ -520,28 +522,9 @@ export default function PhotoBooth() {
             }
         });
         
-        // Seek ke akhir untuk freeze frame akhir
-        await Promise.all(videoElements.map((item) =>
-            new Promise((r) => {
-                const dur = item.video.duration;
-                const safeDur = (dur && !isNaN(dur) && isFinite(dur)) ? dur : 5;
-                const endTime = Math.max(0, safeDur - 0.1);
-                item.video.currentTime = endTime;
-                item.video.addEventListener("seeked", r, { once: true });
-            })
-        ));
-
-        // Capture freeze frame akhir (frame terakhir video)
-        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
+        // Capture freeze frame akhir (berupa foto)
+        drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
-
-        // Reset ke awal
-        await Promise.all(videoElements.map((item) =>
-            new Promise((r) => {
-                item.video.currentTime = 0;
-                item.video.addEventListener("seeked", r, { once: true });
-            })
-        ));
 
         const renderFreezeStart = () => {
             offCtx.putImageData(freezeStartData, 0, 0);
@@ -674,11 +657,13 @@ export default function PhotoBooth() {
                     })
                 ));
 
-                // Capture freeze frame awal (frame pertama video di detik 0)
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
+                const photoOnlyElements = videoElements.map(item => ({ video: null, slotIndex: item.slotIndex }));
+
+                // Capture freeze frame awal (berupa foto)
+                drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
                 const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
 
-                // Dapatkan durasi video untuk freeze end
+                // Dapatkan durasi video
                 let videoDuration = 5;
                 videoElements.forEach((item) => {
                     const dur = item.video.duration;
@@ -687,28 +672,9 @@ export default function PhotoBooth() {
                     }
                 });
                 
-                // Seek ke akhir untuk freeze frame akhir
-                await Promise.all(videoElements.map((item) =>
-                    new Promise((r) => {
-                        const dur = item.video.duration;
-                        const safeDur = (dur && !isNaN(dur) && isFinite(dur)) ? dur : 5;
-                        const endTime = Math.max(0, safeDur - 0.1);
-                        item.video.currentTime = endTime;
-                        item.video.addEventListener("seeked", r, { once: true });
-                    })
-                ));
-
-                // Capture freeze frame akhir (frame terakhir video)
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
+                // Capture freeze frame akhir (berupa foto)
+                drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
                 const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
-
-                // Reset ke awal
-                await Promise.all(videoElements.map((item) =>
-                    new Promise((r) => {
-                        item.video.currentTime = 0;
-                        item.video.addEventListener("seeked", r, { once: true });
-                    })
-                ));
 
                 const renderFreezeStart = () => {
                     offCtx.putImageData(freezeStartData, 0, 0);
