@@ -7,15 +7,15 @@ const FRAME_W = 1200;
 const FRAME_H = 3000;
 
 // Slot foto: posisi & ukuran EXACT dari transparent area frame
-const SLOT_X = 124;   // batas kiri slot (piksel)
-const SLOT_W = 950;   // lebar slot
+const SLOT_X = 123;   // batas kiri slot (piksel)
+const SLOT_W = 953;   // lebar slot
 
 // Setiap slot punya tinggi sedikit berbeda (diukur presisi)
 const SLOTS = [
-    { x: SLOT_X, y:   87, h: 554 },
-    { x: SLOT_X, y:  686, h: 554 },
-    { x: SLOT_X, y: 1287, h: 554 },
-    { x: SLOT_X, y: 1894, h: 536 },
+    { x: SLOT_X, y:   86, h: 555 },
+    { x: SLOT_X, y:  686, h: 555 },
+    { x: SLOT_X, y: 1287, h: 555 },
+    { x: SLOT_X, y: 1893, h: 555 },
 ];
 
 // Webcam resolusi = aspect ratio slot foto (pakai slot 0 sebagai acuan)
@@ -186,21 +186,18 @@ export default function PhotoBooth() {
         if (!vid) return;
         const stream = vid.captureStream?.() || vid.mozCaptureStream?.() || null;
         if (!stream) return;
-        // Rekam dengan kualitas maksimal
-        const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-            ? "video/webm;codecs=vp9"
-            : MediaRecorder.isTypeSupported("video/webm")
-            ? "video/webm"
-            : "video/mp4";
+        // Utamakan container mp4 murni jika browser mendukung, kalau tidak fallback ke webm dengan H.264 (hardware accelerated)
+        const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
+        const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
         const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
         recordedChunksRef.current = [];
-        // timeslice 33ms (~30fps) untuk balance smooth & performance
+        // timeslice dihapus agar tidak patah-patah (hanya merekam satu chunk besar)
         recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
         recorder.onstop = () => {
             liveVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: mimeType });
             recordedChunksRef.current = [];
         };
-        recorder.start(33); // timeslice 33ms = ~30fps
+        recorder.start(); 
         mediaRecorderRef.current = recorder;
     };
 
@@ -348,9 +345,12 @@ export default function PhotoBooth() {
 
     // ── Draw frame ke canvas video (satu strip) ──────────────────────────────
     // Menggunakan foto sebagai fallback jika video belum ready
-    const drawOneStrip = useCallback((ctx, videoEls, cW, cH, frameImg, curPhotos) => {
+    const drawOneStrip = useCallback((ctx, videoEls, cW, cH, frameImg, curPhotos, renderScale = 1) => {
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, cW, cH);
+
+        ctx.save();
+        ctx.scale(renderScale, renderScale);
 
         videoEls.forEach(({ video, slotIndex }) => {
             const slot = SLOTS[slotIndex];
@@ -386,7 +386,8 @@ export default function PhotoBooth() {
             ctx.restore();
         });
 
-        if (frameImg) ctx.drawImage(frameImg, 0, 0, cW, cH);
+        if (frameImg) ctx.drawImage(frameImg, 0, 0, FRAME_W, FRAME_H);
+        ctx.restore();
     }, []);
 
     // ── Video preview (dual strip, smooth) ──────────────────────────────────
@@ -400,7 +401,8 @@ export default function PhotoBooth() {
         if (!frameImgRef.current) return;
         stopVideoPreview();
         const frameImg = frameImgRef.current;
-        const cW = FRAME_W, cH = FRAME_H;
+        const PREVIEW_SCALE = 0.5; // Scale down preview for performance
+        const cW = FRAME_W * PREVIEW_SCALE, cH = FRAME_H * PREVIEW_SCALE;
 
         const previewCanvas = videoPreviewCanvasRef.current;
         if (!previewCanvas) return;
@@ -454,7 +456,7 @@ export default function PhotoBooth() {
         const photosSnap = photos.slice();
 
         // Capture freeze frame awal (frame pertama video di detik 0)
-        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap);
+        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, PREVIEW_SCALE);
         const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
 
         // Dapatkan durasi video untuk freeze end
@@ -478,7 +480,7 @@ export default function PhotoBooth() {
         ));
 
         // Capture freeze frame akhir (frame terakhir video)
-        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap);
+        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, PREVIEW_SCALE);
         const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
 
         // Reset ke awal
@@ -506,41 +508,43 @@ export default function PhotoBooth() {
         const T_VIDEO      = 5000;
         const T_FREEZE_OUT = 1000;
         const TOTAL        = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT;
-        let videoPlaying = false;
+        let currentPhase = 0; // 0: freeze1, 1: play, 2: freeze2
         const startTime = performance.now();
+
+        let lastFrameTime = startTime;
+        const FRAME_INTERVAL = 1000 / 30; // Limit preview to 30fps
 
         const animate = (now) => {
             videoPreviewAnimRef.current = requestAnimationFrame(animate);
+            if (now - lastFrameTime < FRAME_INTERVAL) return;
+            lastFrameTime = now;
             const elapsed = now - startTime;
             const loop = elapsed % TOTAL;
 
-            if (loop < T_FREEZE_IN) {
-                // Fase 1: freeze frame awal video (1 detik)
-                if (videoPlaying) {
-                    videoElements.forEach((v) => v.video.pause());
-                    videoPlaying = false;
-                }
-                renderFreezeStart();
+            let nextPhase = 0;
+            if (loop >= T_FREEZE_IN && loop < T_FREEZE_IN + T_VIDEO) nextPhase = 1;
+            else if (loop >= T_FREEZE_IN + T_VIDEO) nextPhase = 2;
 
-            } else if (loop < T_FREEZE_IN + T_VIDEO) {
-                // Fase 2: video playing (5 detik)
-                if (!videoPlaying) {
+            if (nextPhase !== currentPhase) {
+                if (nextPhase === 0) {
                     videoElements.forEach((v) => {
-                        v.video.currentTime = 0;
-                        v.video.play().catch(() => {});
+                        v.video.pause();
+                        v.video.currentTime = 0; // Pre-seek to 0 early to prevent glitch!
                     });
-                    videoPlaying = true;
+                } else if (nextPhase === 1) {
+                    videoElements.forEach((v) => v.video.play().catch(() => {}));
+                } else if (nextPhase === 2) {
+                    videoElements.forEach((v) => v.video.pause());
                 }
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap);
+                currentPhase = nextPhase;
+            }
+
+            if (nextPhase === 0) renderFreezeStart();
+            else if (nextPhase === 1) {
+                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, PREVIEW_SCALE);
                 mainCtx.drawImage(offscreenRef.current, 0, 0);
                 mainCtx.drawImage(offscreenRef.current, cW, 0);
-
             } else {
-                // Fase 3: freeze frame akhir video (1 detik)
-                if (videoPlaying) {
-                    videoElements.forEach((v) => v.video.pause());
-                    videoPlaying = false;
-                }
                 renderFreezeEnd();
             }
         };
@@ -567,7 +571,8 @@ export default function PhotoBooth() {
             try {
                 if (!frameImgRef.current) { resolve(null); return; }
                 const frameImg = frameImgRef.current;
-                const cW = FRAME_W, cH = FRAME_H;
+                const SCALE = 0.5; // Scale down untuk encoding yang super mulus tanpa kehilangan fps
+                const cW = FRAME_W * SCALE, cH = FRAME_H * SCALE;
                 const photosSnapshot = photos.slice();
 
                 const rc = document.createElement("canvas");
@@ -615,7 +620,7 @@ export default function PhotoBooth() {
                 ));
 
                 // Capture freeze frame awal (frame pertama video di detik 0)
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot);
+                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, SCALE);
                 const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
 
                 // Dapatkan durasi video untuk freeze end
@@ -639,7 +644,7 @@ export default function PhotoBooth() {
                 ));
 
                 // Capture freeze frame akhir (frame terakhir video)
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot);
+                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, SCALE);
                 const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
 
                 // Reset ke awal
@@ -668,10 +673,11 @@ export default function PhotoBooth() {
                 const T_FREEZE_OUT = 1000;
                 const TOTAL        = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT; // 7000ms
 
-                const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-                    ? "video/webm;codecs=vp9" : "video/webm";
-                const stream = rc.captureStream(60); // 60fps optimal balance
-                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15_000_000 });
+                // Paksa penggunaan hardware-accelerated H264 / MP4 agar hasil video 100% mulus saat diputar di HP/Laptop
+                const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
+                const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
+                const stream = rc.captureStream(30); // 30fps HD
+                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
                 const chunks = [];
                 mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
                 mr.onstop = () => {
@@ -688,23 +694,12 @@ export default function PhotoBooth() {
                 renderFreezeStart();
                 mr.start();
 
-                let videoPlaying = false;
+                let currentPhase = 0; // 0: freeze1, 1: play, 2: freeze2
                 let isDone = false;
                 const startTime = performance.now();
-                const FRAME_INTERVAL = 1000 / 60; // 60fps fixed
-                let lastFrameTime = startTime;
 
                 const renderLoop = (now) => {
                     if (isDone) return;
-                    
-                    // Fixed timestep rendering
-                    const deltaTime = now - lastFrameTime;
-                    if (deltaTime < FRAME_INTERVAL) {
-                        requestAnimationFrame(renderLoop);
-                        return;
-                    }
-                    lastFrameTime = now - (deltaTime % FRAME_INTERVAL);
-
                     const elapsed = now - startTime;
 
                     if (elapsed >= TOTAL) {
@@ -714,33 +709,27 @@ export default function PhotoBooth() {
                         return;
                     }
 
-                    if (elapsed < T_FREEZE_IN) {
-                        // Fase 1: freeze frame awal video (1 detik)
-                        if (videoPlaying) {
-                            videoElements.forEach((v) => v.video.pause());
-                            videoPlaying = false;
-                        }
-                        renderFreezeStart();
+                    let nextPhase = 0;
+                    if (elapsed >= T_FREEZE_IN && elapsed < T_FREEZE_IN + T_VIDEO) nextPhase = 1;
+                    else if (elapsed >= T_FREEZE_IN + T_VIDEO) nextPhase = 2;
 
-                    } else if (elapsed < T_FREEZE_IN + T_VIDEO) {
-                        // Fase 2: video playing (5 detik)
-                        if (!videoPlaying) {
-                            videoElements.forEach((v) => {
-                                v.video.currentTime = 0;
-                                v.video.play().catch(() => {});
-                            });
-                            videoPlaying = true;
+                    if (nextPhase !== currentPhase) {
+                        // Skip setting currentTime=0 on nextPhase=1 here because it's ALREADY 
+                        // perfectly set to 0 before mr.start() without async glitches!
+                        if (nextPhase === 1) {
+                            videoElements.forEach((v) => v.video.play().catch(() => {}));
+                        } else if (nextPhase === 2) {
+                            videoElements.forEach((v) => v.video.pause());
                         }
-                        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot);
+                        currentPhase = nextPhase;
+                    }
+
+                    if (nextPhase === 0) renderFreezeStart();
+                    else if (nextPhase === 1) {
+                        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, SCALE);
                         rcCtx.drawImage(off, 0, 0);
                         rcCtx.drawImage(off, cW, 0);
-
                     } else {
-                        // Fase 3: freeze frame akhir video (1 detik)
-                        if (videoPlaying) {
-                            videoElements.forEach((v) => v.video.pause());
-                            videoPlaying = false;
-                        }
                         renderFreezeEnd();
                     }
 
