@@ -997,7 +997,7 @@ export default function PhotoBooth() {
                 <div style={S.modalOverlay}>
                     <div style={{ ...S.modalBox, padding: "50px 80px" }}>
                         <div style={{ fontSize: 72, marginBottom: 20 }}>{isSaving ? "⏳" : "✅"}</div>
-                        <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 42, fontFamily: "CantikaCute" }}>
+                        <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 42, fontFamily: "CustomFont" }}>
                             {isSaving ? "Mohon tunggu..." : "Berhasil disimpan!"}
                         </h2>
                         {isSaving && (
@@ -1024,7 +1024,7 @@ const S = {
     },
     titleBar: {
         margin: 0, lineHeight: "110px", textAlign: "center", width: "100%",
-        fontSize: 60, fontFamily: "CantikaCute, cursive", color: "#8c5b4a",
+        fontSize: 60, fontFamily: "CustomFont, cursive", color: "#8c5b4a",
     },
     timerBadge: {
         position: "absolute", right: 0, top: 12, padding: "14px 28px",
@@ -1034,7 +1034,7 @@ const S = {
     },
     button: {
         padding: "16px 32px", fontSize: 30, cursor: "pointer",
-        fontFamily: "CantikaCute, cursive", color: "#8c5b4a",
+        fontFamily: "CustomFont, cursive", color: "#8c5b4a",
         border: "2px solid #8c5b4a", borderRadius: 12, background: "white",
         transition: "opacity 0.2s",
     },
@@ -1066,12 +1066,12 @@ const S = {
     },
     inputLabel: {
         display: "block", textAlign: "left", fontSize: 26, fontWeight: "bold",
-        color: "#8c5b4a", marginBottom: 10, fontFamily: "CantikaCute, cursive",
+        color: "#8c5b4a", marginBottom: 10, fontFamily: "CustomFont, cursive",
     },
     input: {
         width: "100%", padding: "18px 22px", fontSize: 26,
         border: "2px solid #ff7aa2", borderRadius: 12,
-        boxSizing: "border-box", fontFamily: "CantikaCute, cursive", outline: "none",
+        boxSizing: "border-box", fontFamily: "CustomFont, cursive", outline: "none",
     },
     errorText: { color: "#ff6b6b", fontSize: 16, marginBottom: 16, fontWeight: "bold", textAlign: "left" },
     progressBarWrap: { width: "100%", height: 16, background: "#ffe0ea", borderRadius: 999, overflow: "hidden", marginTop: 10 },

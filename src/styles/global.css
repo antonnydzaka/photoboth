@@ -1,19 +1,11 @@
-@font-face {
-  font-family: "CantikaCute";
-  src: url("../../public/assets/fonts/Cantika Cute Handwriting.otf") format("opentype");
-  font-weight: normal;
-  font-style: normal;
-}
-
 * {
   box-sizing: border-box;
 }
 
 body {
-  font-family: "CantikaCute", cursive, sans-serif;
+  font-family: "CustomFont", cursive, sans-serif;
   color: #8c5b4a;
   background-color: #ffffff;
-  background-image: url("");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

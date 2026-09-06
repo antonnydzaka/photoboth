@@ -22,7 +22,7 @@ function App() {
       }}>
         <img src={logoSrc} alt="JiggleDuo Logo" style={{ width: 80 }} />
         <h1 style={{
-          fontFamily: "CantikaCute",
+          fontFamily: "CustomFont",
           color: "#8c5b4a",
           margin: 0,
           fontSize: 56,
