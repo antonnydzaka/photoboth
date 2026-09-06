@@ -19,6 +19,13 @@ const FRAME_OPTIONS = [
     "/assets/frames/heart-frame-4.png",
 ];
 
+// ─── STICKER OPTIONS ──────────────────────────────────────────────────────────
+const STICKER_OPTIONS = [
+    "/assets/stickers/leaf.png",
+    "/assets/stickers/sparkles.png",
+];
+
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const sanitizeFilename = (str) =>
     str.trim().replace(/\s+/g, "").replace(/[^a-zA-Z0-9\u00C0-\u024F\u0600-\u06FF]/g, "");
@@ -56,7 +63,7 @@ const drawCuttingGuide = (ctx, totalWidth, totalHeight) => {
 export default function PhotoBooth() {
     const webcamRef               = useRef(null);
     const canvasRef               = useRef(null);
-    const dupCanvasRef            = useRef(null);
+    const decorateCanvasRef       = useRef(null);
     const videoPreviewCanvasRef   = useRef(null);
     const frameImgRef             = useRef(null);
     const mediaRecorderRef        = useRef(null);
@@ -93,7 +100,17 @@ export default function PhotoBooth() {
 
     const [frameLayout,        setFrameLayout]        = useState(null);
 
+    // ── Sticker State ──
+    const [stickers,             setStickers]             = useState([]);
+    const [draggingStickerIndex, setDraggingStickerIndex] = useState(null);
+    const [selectedStickerIndex, setSelectedStickerIndex] = useState(null);
+    const [stickerDragOffset,    setStickerDragOffset]    = useState({ x: 0, y: 0 });
+    const [showStickerModal,     setShowStickerModal]     = useState(false);
+    const [activeStampSrc,       setActiveStampSrc]       = useState(null);
+    const stickersRef            = useRef([]);
+
     useEffect(() => { setPhotoCount(photos.length); }, [photos]);
+    useEffect(() => { stickersRef.current = stickers; }, [stickers]);
 
     // ── Load frame & Dynamic Smart Scan ──
     useEffect(() => {
@@ -159,7 +176,7 @@ export default function PhotoBooth() {
 
     // ── Redraw when photos or layout change ──
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(drawCanvas, [photos, photoCount, frameLayout]);
+    useEffect(drawCanvas, [photos, photoCount, frameLayout, stickers, selectedStickerIndex, mode]);
 
     // ── Draw main photo canvas ──
     function drawCanvas() {
@@ -194,12 +211,41 @@ export default function PhotoBooth() {
         // Frame di atas foto (berdasarkan deteksi dinamis)
         ctx.drawImage(frameImgRef.current, 0, frameLayout.drawY, FRAME_W, frameLayout.drawH);
 
-        // Sync ke dup canvas
-        const dup = dupCanvasRef.current;
-        if (dup) {
-            dup.width  = FRAME_W;
-            dup.height = FRAME_H;
-            dup.getContext("2d").drawImage(canvas, 0, 0);
+        // Sync ke decorate canvas (kiri + kanan + stiker)
+        if (mode === "decorate" && decorateCanvasRef.current) {
+            const decCanvas = decorateCanvasRef.current;
+            const decCtx = decCanvas.getContext("2d");
+            decCanvas.width = FRAME_W * 2;
+            decCanvas.height = FRAME_H;
+            
+            // Draw left strip
+            decCtx.drawImage(canvas, 0, 0);
+            // Draw right strip
+            decCtx.drawImage(canvas, FRAME_W, 0);
+            
+            // Draw separator line
+            decCtx.strokeStyle = "#ccc";
+            decCtx.setLineDash([15, 15]);
+            decCtx.lineWidth = 4;
+            decCtx.beginPath();
+            decCtx.moveTo(FRAME_W, 0);
+            decCtx.lineTo(FRAME_W, FRAME_H);
+            decCtx.stroke();
+            decCtx.setLineDash([]);
+
+            // Draw stickers on top of everything
+            stickers.forEach((s, index) => {
+                decCtx.drawImage(s.img, s.x, s.y, s.w, s.h);
+                // Draw bounding box if selected (and not stamping)
+                if (index === selectedStickerIndex && !activeStampSrc) {
+                    decCtx.save();
+                    decCtx.strokeStyle = "#ff7aa2";
+                    decCtx.lineWidth = 6;
+                    decCtx.setLineDash([15, 15]);
+                    decCtx.strokeRect(s.x, s.y, s.w, s.h);
+                    decCtx.restore();
+                }
+            });
         }
     }
 
@@ -274,6 +320,7 @@ export default function PhotoBooth() {
         setSessionStarted(true); setSessionTimeLeft(180);
         setCanTakePhoto(false); setSelectedPhotoIndex(null);
         setRetakeSlotIndex(null); setMode("photo");
+        setStickers([]); setActiveStampSrc(null); setSelectedStickerIndex(null); // Reset stickers for new session
     };
 
     const handleBack = () => {
@@ -344,18 +391,70 @@ export default function PhotoBooth() {
         setSelectedPhotoIndex(null); setRetakeSlotIndex(photo.slotIndex);
         setCanTakePhoto(true); setShowRetakeCamera(true);
     };
+    // ── Sticker Helpers ──
+    const addSticker = (src, clickX, clickY) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => {
+            const aspect = img.naturalHeight / img.naturalWidth;
+            const width = 300;
+            const height = width * aspect;
+            setStickers(prev => {
+                const newStickers = [...prev, {
+                    img,
+                    x: clickX - width / 2,
+                    y: clickY - height / 2,
+                    w: width,
+                    h: height
+                }];
+                // If not in stamp mode, select it. If in stamp mode, leave selection alone.
+                if (!activeStampSrc) setSelectedStickerIndex(newStickers.length - 1);
+                return newStickers;
+            });
+        };
+    };
+
+    const deleteSelectedSticker = () => {
+        if (selectedStickerIndex === null) return;
+        setStickers(prev => prev.filter((_, i) => i !== selectedStickerIndex));
+        setSelectedStickerIndex(null);
+    };
 
     // ── Canvas drag ──
     const getCoords = (e) => {
-        const r = canvasRef.current.getBoundingClientRect();
+        const canvas = mode === "decorate" && decorateCanvasRef.current ? decorateCanvasRef.current : canvasRef.current;
+        const r = canvas.getBoundingClientRect();
+        const scaleX = (mode === "decorate" ? FRAME_W * 2 : FRAME_W) / r.width;
         return {
-            x: (e.clientX - r.left) * (FRAME_W / r.width),
+            x: (e.clientX - r.left) * scaleX,
             y: (e.clientY - r.top)  * (FRAME_H / r.height),
         };
     };
     const handleMouseDown = (e) => {
         if (!frameLayout) return;
         const { x, y } = getCoords(e);
+        
+        // 1. Cek Stiker (hanya di mode decorate)
+        if (mode === "decorate") {
+            if (activeStampSrc) {
+                // Stamp mode: place sticker at click coordinates
+                addSticker(activeStampSrc, x, y);
+                return;
+            }
+
+            for (let i = stickers.length - 1; i >= 0; i--) {
+                const s = stickers[i];
+                if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
+                    setDraggingStickerIndex(i);
+                    setSelectedStickerIndex(i);
+                    setStickerDragOffset({ x: x - s.x, y: y - s.y });
+                    return; // Berhenti mengecek jika stiker kena klik
+                }
+            }
+            setSelectedStickerIndex(null); // Deselect stiker jika klik tempat kosong
+        }
+
+        // 2. Cek Foto (hanya di mode photo untuk reposisi)
         for (let i = photos.length - 1; i >= 0; i--) {
             const p = photos[i], slot = frameLayout.slots[p.slotIndex];
             if (!slot) continue;
@@ -372,8 +471,20 @@ export default function PhotoBooth() {
         if (mode === "decorate") setSelectedPhotoIndex(null);
     };
     const handleMouseMove = (e) => {
-        if (draggingPhoto === null || mode !== "photo" || !frameLayout) return;
+        if (!frameLayout) return;
         const { x, y } = getCoords(e);
+        
+        if (draggingStickerIndex !== null && mode === "decorate") {
+            setStickers(prev => {
+                const updated = [...prev];
+                updated[draggingStickerIndex].x = x - stickerDragOffset.x;
+                updated[draggingStickerIndex].y = y - stickerDragOffset.y;
+                return updated;
+            });
+            return;
+        }
+
+        if (draggingPhoto === null || mode !== "photo") return;
         setPhotos((prev) => {
             const updated = [...prev];
             const p = updated[draggingPhoto];
@@ -387,7 +498,10 @@ export default function PhotoBooth() {
             return updated;
         });
     };
-    const handleMouseUp = () => setDraggingPhoto(null);
+    const handleMouseUp = () => {
+        setDraggingPhoto(null);
+        setDraggingStickerIndex(null);
+    };
 
     // ── Draw frame ke canvas video (satu strip) ──────────────────────────────
     // Menggunakan foto sebagai fallback jika video belum ready
@@ -438,6 +552,7 @@ export default function PhotoBooth() {
         if (frameImg) {
             ctx.drawImage(frameImg, 0, layout.drawY, FRAME_W, layout.drawH);
         }
+
         ctx.restore();
     }, []);
 
@@ -512,30 +627,27 @@ export default function PhotoBooth() {
         // Capture freeze frame awal (berupa foto)
         drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
-
-        // Dapatkan durasi video
-        let videoDuration = 5;
-        videoElements.forEach((item) => {
-            const dur = item.video.duration;
-            if (dur && !isNaN(dur) && isFinite(dur) && dur > videoDuration) {
-                videoDuration = dur;
-            }
-        });
         
         // Capture freeze frame akhir (berupa foto)
         drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
-        const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
+        let freezeEndData = offCtx.getImageData(0, 0, cW, cH);
 
         const renderFreezeStart = () => {
             offCtx.putImageData(freezeStartData, 0, 0);
             mainCtx.drawImage(offscreenRef.current, 0, 0);
             mainCtx.drawImage(offscreenRef.current, cW, 0);
+            stickersRef.current.forEach(s => {
+                mainCtx.drawImage(s.img, s.x * PREVIEW_SCALE, s.y * PREVIEW_SCALE, s.w * PREVIEW_SCALE, s.h * PREVIEW_SCALE);
+            });
         };
 
         const renderFreezeEnd = () => {
             offCtx.putImageData(freezeEndData, 0, 0);
             mainCtx.drawImage(offscreenRef.current, 0, 0);
             mainCtx.drawImage(offscreenRef.current, cW, 0);
+            stickersRef.current.forEach(s => {
+                mainCtx.drawImage(s.img, s.x * PREVIEW_SCALE, s.y * PREVIEW_SCALE, s.w * PREVIEW_SCALE, s.h * PREVIEW_SCALE);
+            });
         };
 
         // Timing — freeze 1s → video 5s → freeze 1s = 7s total
@@ -564,7 +676,7 @@ export default function PhotoBooth() {
                 if (nextPhase === 0) {
                     videoElements.forEach((v) => {
                         v.video.pause();
-                        v.video.currentTime = 0; // Pre-seek to 0 early to prevent glitch!
+                        v.video.currentTime = 0; 
                     });
                 } else if (nextPhase === 1) {
                     videoElements.forEach((v) => v.video.play().catch(() => {}));
@@ -579,6 +691,9 @@ export default function PhotoBooth() {
                 drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
                 mainCtx.drawImage(offscreenRef.current, 0, 0);
                 mainCtx.drawImage(offscreenRef.current, cW, 0);
+                stickersRef.current.forEach(s => {
+                    mainCtx.drawImage(s.img, s.x * PREVIEW_SCALE, s.y * PREVIEW_SCALE, s.w * PREVIEW_SCALE, s.h * PREVIEW_SCALE);
+                });
             } else {
                 renderFreezeEnd();
             }
@@ -600,27 +715,23 @@ export default function PhotoBooth() {
     };
 
     // ── Create combined video blob ─────────────────────────────────────────────
-    // Struktur: freeze 2s → fade in 0.5s → video 5s = ~7.5s total
     const createCombinedVideoBlob = () =>
         new Promise(async (resolve) => {
             try {
                 if (!frameImgRef.current) { resolve(null); return; }
                 const frameImg = frameImgRef.current;
-                const SCALE = 0.5; // Scale down untuk encoding yang super mulus tanpa kehilangan fps
+                const SCALE = 0.5;
                 const cW = FRAME_W * SCALE, cH = FRAME_H * SCALE;
                 const photosSnapshot = photos.slice();
 
                 const rc = document.createElement("canvas");
                 rc.width = cW * 2; rc.height = cH;
                 const rcCtx = rc.getContext("2d");
-                rcCtx.fillStyle = "#fff";
-                rcCtx.fillRect(0, 0, rc.width, rc.height);
 
                 const off = document.createElement("canvas");
                 off.width = cW; off.height = cH;
                 const offCtx = off.getContext("2d");
 
-                // loop=false — tidak ada seam glitch
                 const videoElements = [];
                 const slotCount = frameLayout ? frameLayout.slots.length : 4;
                 for (let i = 0; i < slotCount; i++) {
@@ -642,7 +753,6 @@ export default function PhotoBooth() {
                     })
                 ));
 
-                // Tunggu metadata untuk durasi
                 await Promise.all(videoElements.map((item) =>
                     new Promise((r) => {
                         if (item.video.readyState >= 1) { r(); return; }
@@ -659,48 +769,30 @@ export default function PhotoBooth() {
 
                 const photoOnlyElements = videoElements.map(item => ({ video: null, slotIndex: item.slotIndex }));
 
-                // Capture freeze frame awal (berupa foto)
+                // Capture freeze frame once to cache it
                 drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
-                const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
+                const freezeFrameData = offCtx.getImageData(0, 0, cW, cH);
 
-                // Dapatkan durasi video
-                let videoDuration = 5;
-                videoElements.forEach((item) => {
-                    const dur = item.video.duration;
-                    if (dur && !isNaN(dur) && isFinite(dur) && dur > videoDuration) {
-                        videoDuration = dur;
-                    }
-                });
-                
-                // Capture freeze frame akhir (berupa foto)
-                drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
-                const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
-
-                const renderFreezeStart = () => {
-                    offCtx.putImageData(freezeStartData, 0, 0);
+                const renderFreeze = () => {
+                    offCtx.putImageData(freezeFrameData, 0, 0);
                     rcCtx.fillStyle = "#fff"; rcCtx.fillRect(0, 0, rc.width, rc.height);
                     rcCtx.drawImage(off, 0, 0);
                     rcCtx.drawImage(off, cW, 0);
-                };
-
-                const renderFreezeEnd = () => {
-                    offCtx.putImageData(freezeEndData, 0, 0);
-                    rcCtx.fillStyle = "#fff"; rcCtx.fillRect(0, 0, rc.width, rc.height);
-                    rcCtx.drawImage(off, 0, 0);
-                    rcCtx.drawImage(off, cW, 0);
+                    stickersRef.current.forEach(s => {
+                        rcCtx.drawImage(s.img, s.x * SCALE, s.y * SCALE, s.w * SCALE, s.h * SCALE);
+                    });
                 };
 
                 // Timing — freeze 1s → video 5s → freeze 1s = 7s total
                 const T_FREEZE_IN  = 1000;
                 const T_VIDEO      = 5000;
                 const T_FREEZE_OUT = 1000;
-                const TOTAL        = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT; // 7000ms
+                const TOTAL        = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT;
 
-                // Paksa penggunaan hardware-accelerated H264 / MP4 agar hasil video 100% mulus saat diputar di HP/Laptop
                 const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
                 const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
-                const stream = rc.captureStream(30); // 30fps HD
-                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+                const stream = rc.captureStream(30);
+                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_500_000 });
                 const chunks = [];
                 mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
                 mr.onstop = () => {
@@ -713,17 +805,23 @@ export default function PhotoBooth() {
                     resolve(blob);
                 };
 
-                // Mulai dengan freeze frame awal
-                renderFreezeStart();
+                renderFreeze();
                 mr.start();
 
-                let currentPhase = 0; // 0: freeze1, 1: play, 2: freeze2
+                let currentPhase = 0;
+                let lastTime = 0;
                 let isDone = false;
                 const startTime = performance.now();
 
-                const renderLoop = (now) => {
+                const renderLoop = (time) => {
                     if (isDone) return;
-                    const elapsed = now - startTime;
+                    requestAnimationFrame(renderLoop);
+
+                    // Cap at 30fps
+                    if (time - lastTime < 33) return;
+                    lastTime = time;
+
+                    const elapsed = time - startTime;
 
                     if (elapsed >= TOTAL) {
                         isDone = true;
@@ -737,8 +835,6 @@ export default function PhotoBooth() {
                     else if (elapsed >= T_FREEZE_IN + T_VIDEO) nextPhase = 2;
 
                     if (nextPhase !== currentPhase) {
-                        // Skip setting currentTime=0 on nextPhase=1 here because it's ALREADY 
-                        // perfectly set to 0 before mr.start() without async glitches!
                         if (nextPhase === 1) {
                             videoElements.forEach((v) => v.video.play().catch(() => {}));
                         } else if (nextPhase === 2) {
@@ -747,17 +843,19 @@ export default function PhotoBooth() {
                         currentPhase = nextPhase;
                     }
 
-                    if (nextPhase === 0) renderFreezeStart();
+                    if (nextPhase === 0) renderFreeze();
                     else if (nextPhase === 1) {
                         drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
                         rcCtx.fillStyle = "#fff"; rcCtx.fillRect(0, 0, rc.width, rc.height);
                         rcCtx.drawImage(off, 0, 0);
                         rcCtx.drawImage(off, cW, 0);
+                        stickersRef.current.forEach(s => {
+                            rcCtx.drawImage(s.img, s.x * SCALE, s.y * SCALE, s.w * SCALE, s.h * SCALE);
+                        });
                     } else {
-                        renderFreezeEnd();
+                        renderFreeze();
                     }
 
-                    requestAnimationFrame(renderLoop);
                 };
 
                 requestAnimationFrame(renderLoop);
@@ -783,6 +881,12 @@ export default function PhotoBooth() {
         
         ctx.drawImage(src, 0, 0);
         ctx.drawImage(src, FRAME_W, 0);
+        
+        // Draw Stickers over the combined layout!
+        stickersRef.current.forEach((s) => {
+            ctx.drawImage(s.img, s.x, s.y, s.w, s.h);
+        });
+        
         drawCuttingGuide(ctx, combined.width, combined.height);
         return new Promise((r) => combined.toBlob(r, "image/jpeg", 0.95));
     };
@@ -909,14 +1013,42 @@ export default function PhotoBooth() {
                             )}
                             {mode === "decorate" && !showRetakeCamera && (
                                 <div style={S.col}>
-                                    {showRetakeButton ? (
+                                    {activeStampSrc ? (
+                                        <div style={{ textAlign: "center", marginBottom: 30, background: "#fff0f4", padding: 20, borderRadius: 20, boxShadow: "0 10px 30px rgba(255,122,162,0.2)" }}>
+                                            <h3 style={{ margin: "0 0 10px 0", color: "#ff7aa2", fontSize: 24 }}>👆 Tap foto untuk menempel</h3>
+                                            <img src={activeStampSrc} alt="Active Stamp" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 16 }} />
+                                            <br />
+                                            <button 
+                                                style={{ ...S.button, fontSize: 20, padding: "10px 24px" }} 
+                                                onClick={() => setActiveStampSrc(null)}
+                                            >
+                                                Selesai Menempel
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div style={{ textAlign: "center", marginBottom: 30 }}>
+                                            <button 
+                                                style={{ ...S.button, background: "#ff7aa2", color: "white", borderColor: "#ff7aa2", fontSize: 28, padding: "16px 32px", boxShadow: "0 10px 20px rgba(255,122,162,0.3)" }} 
+                                                onClick={() => { setSelectedStickerIndex(null); setShowStickerModal(true); }}
+                                            >
+                                                ✨ Tambahkan Stiker
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {!activeStampSrc && selectedStickerIndex !== null ? (
+                                        <div style={{ textAlign: "center", marginTop: 10 }}>
+                                            <div style={{ fontSize: 18, color: "#8c5b4a", marginBottom: 8 }}>Stiker terpilih</div>
+                                            <button style={{ ...S.button, background: "#ff6b6b", color: "white", borderColor: "#ff6b6b", fontSize: 20, padding: "10px 20px" }} onClick={deleteSelectedSticker}>🗑️ Hapus Stiker</button>
+                                        </div>
+                                    ) : showRetakeButton ? (
                                         <div style={{ textAlign: "center" }}>
                                             <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12 }}>Foto dipilih — mau diganti?</div>
                                             <button style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>📷 Retake foto ini</button>
                                         </div>
                                     ) : (
                                         <div style={{ fontSize: 18, color: "#b08a80", textAlign: "center", maxWidth: 320 }}>
-                                            💡 Klik foto di strip untuk memilih dan retake
+                                            💡 Klik foto atau stiker di strip untuk memilih/geser
                                         </div>
                                     )}
                                 </div>
@@ -930,11 +1062,16 @@ export default function PhotoBooth() {
                                 <div style={S.previewLabel}>📸 Foto</div>
                                 <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
                                     <canvas ref={canvasRef}
-                                        style={{ width: 320, height: 954, display: "block", cursor: mode === "decorate" ? "pointer" : "default" }}
-                                        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
+                                        style={{ width: 320, height: 954, display: mode === "decorate" ? "none" : "block", cursor: "default" }}
+                                        onMouseDown={mode === "photo" ? handleMouseDown : undefined} 
+                                        onMouseMove={mode === "photo" ? handleMouseMove : undefined} 
+                                        onMouseUp={mode === "photo" ? handleMouseUp : undefined}
                                     />
                                     {mode === "decorate" && (
-                                        <canvas ref={dupCanvasRef} style={{ width: 320, height: 954, display: "block" }} />
+                                        <canvas ref={decorateCanvasRef} 
+                                            style={{ width: 640, height: 954, display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
+                                            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
+                                        />
                                     )}
                                 </div>
                             </div>
@@ -962,6 +1099,31 @@ export default function PhotoBooth() {
                     </div>
                 )}
             </div>
+
+            {/* MODAL: Sticker Selection */}
+            {showStickerModal && (
+                <div style={S.modalOverlay} onClick={() => setShowStickerModal(false)}>
+                    <div style={{ ...S.modalBox, padding: "40px", maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+                        <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 32 }}>Pilih Stiker</h2>
+                        <div style={{ display: "flex", gap: 20, justifyContent: "center", flexWrap: "wrap", marginBottom: 30 }}>
+                            {STICKER_OPTIONS.map((src, i) => (
+                                <img key={i} src={src} alt="Sticker" 
+                                    style={{ width: 120, height: 120, objectFit: "contain", cursor: "pointer", background: "#fff0f4", borderRadius: 16, padding: 12, boxShadow: "0 6px 16px rgba(255,122,162,0.2)", transition: "transform 0.2s" }} 
+                                    onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
+                                    onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+                                    onClick={() => {
+                                        setActiveStampSrc(src);
+                                        setShowStickerModal(false);
+                                    }} 
+                                />
+                            ))}
+                        </div>
+                        <button style={{ ...S.button, fontSize: 20, padding: "10px 30px" }} onClick={() => setShowStickerModal(false)}>
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* MODAL: Input data */}
             {showNameInput && (
