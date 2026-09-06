@@ -1,29 +1,15 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import Webcam from "react-webcam";
 
-// ─── FRAME DIMENSIONS — diukur presisi via ffmpeg alpha scan ─────────────────
-// Frame asset: 1200 × 3000 px
+// Frame asset asli: 1200 × 3000 px, tapi kita naikkan kanvas ke 3576 px
+// agar frame baru bisa 100% pas (full bleed) dengan kertas 4R tanpa distorsi.
 const FRAME_W = 1200;
-const FRAME_H = 3000;
+const FRAME_H = 3576; // Full 4R (1200 x 3576) = 2400 x 3576 (2 strip)
 
-// Slot foto: posisi & ukuran EXACT dari transparent area frame
-const SLOT_X = 123;   // batas kiri slot (piksel)
-const SLOT_W = 953;   // lebar slot
+// Offset untuk memusatkan bingkai lama (3000) ke kanvas baru (3576)
+const OLD_FRAME_OFFSET_Y = (3576 - 3000) / 2; // 288
 
-// Setiap slot punya tinggi sedikit berbeda (diukur presisi)
-const SLOTS = [
-    { x: SLOT_X, y:   86, h: 555 },
-    { x: SLOT_X, y:  686, h: 555 },
-    { x: SLOT_X, y: 1287, h: 555 },
-    { x: SLOT_X, y: 1893, h: 555 },
-];
 
-// Webcam resolusi = aspect ratio slot foto (pakai slot 0 sebagai acuan)
-const videoConstraints = {
-    width:  SLOT_W,
-    height: SLOTS[0].h,
-    facingMode: "user",
-};
 
 // ─── FRAME OPTIONS ────────────────────────────────────────────────────────────
 const FRAME_OPTIONS = [
@@ -105,25 +91,80 @@ export default function PhotoBooth() {
     const [isSaving,           setIsSaving]           = useState(false);
     const [saveProgress,       setSaveProgress]       = useState(0);
 
+    const [frameLayout,        setFrameLayout]        = useState(null);
+
     useEffect(() => { setPhotoCount(photos.length); }, [photos]);
 
-    // ── Load frame ──
+    // ── Load frame & Dynamic Smart Scan ──
     useEffect(() => {
-        if (!selectedFrame) return;
+        if (!selectedFrame) {
+            setFrameLayout(null);
+            return;
+        }
         const img = new Image();
         img.src = selectedFrame;
-        img.onload = () => { frameImgRef.current = img; drawCanvas(); };
+        img.crossOrigin = "Anonymous";
+        img.onload = () => { 
+            frameImgRef.current = img; 
+            
+            // Scan alpha channel untuk mendeteksi posisi lubang transparan secara cerdas!
+            const cvs = document.createElement("canvas");
+            cvs.width = img.naturalWidth; cvs.height = img.naturalHeight;
+            const ctx = cvs.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            const data = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
+            
+            let leftX = 9999, rightX = 0;
+            const rawSlots = [];
+            let inSlot = false, currentSlot = null;
+            
+            for(let y = 0; y < cvs.height; y++) {
+                let rowHasTrans = false, rowLeft = 9999, rowRight = 0;
+                for(let x = 0; x < cvs.width; x++) {
+                    if (data[(cvs.width * y + x) * 4 + 3] < 50) {
+                        rowHasTrans = true;
+                        if (x < rowLeft) rowLeft = x;
+                        if (x > rowRight) rowRight = x;
+                    }
+                }
+                if (rowHasTrans) {
+                    if (!inSlot) {
+                        inSlot = true; currentSlot = { yStart: y, yEnd: y };
+                        leftX = Math.min(leftX, rowLeft); rightX = Math.max(rightX, rowRight);
+                    } else {
+                        currentSlot.yEnd = y;
+                        leftX = Math.min(leftX, rowLeft); rightX = Math.max(rightX, rowRight);
+                    }
+                } else if (inSlot) {
+                    inSlot = false;
+                    rawSlots.push({ y: currentSlot.yStart, h: currentSlot.yEnd - currentSlot.yStart + 1 });
+                }
+            }
+            if (inSlot) rawSlots.push({ y: currentSlot.yStart, h: currentSlot.yEnd - currentSlot.yStart + 1 });
+            
+            let drawY = 0, drawH = FRAME_H, scaleY = FRAME_H / cvs.height, scaleX = FRAME_W / cvs.width;
+            
+            // Kompatibilitas untuk frame lama 1200x3000 agar tidak ditarik gepeng
+            if (cvs.height === 3000 && cvs.width === 1200) {
+                drawY = OLD_FRAME_OFFSET_Y; drawH = 3000; scaleY = 1;
+            }
+            
+            setFrameLayout({
+                drawY, drawH, x: leftX * scaleX, w: (rightX - leftX + 1) * scaleX,
+                slots: rawSlots.map(s => ({ y: (s.y * scaleY) + drawY, h: s.h * scaleY }))
+            });
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedFrame]);
 
-    // ── Redraw when photos change ──
+    // ── Redraw when photos or layout change ──
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(drawCanvas, [photos, photoCount]);
+    useEffect(drawCanvas, [photos, photoCount, frameLayout]);
 
     // ── Draw main photo canvas ──
     function drawCanvas() {
         const canvas = canvasRef.current;
-        if (!canvas || !frameImgRef.current) return;
+        if (!canvas || !frameImgRef.current || !frameLayout) return;
         const ctx = canvas.getContext("2d");
         canvas.width  = FRAME_W;
         canvas.height = FRAME_H;
@@ -134,23 +175,24 @@ export default function PhotoBooth() {
 
         // Gambar foto di setiap slot dengan cover-fit
         photos.forEach((p) => {
-            const slot = SLOTS[p.slotIndex];
+            const slot = frameLayout.slots[p.slotIndex];
+            if (!slot) return;
             ctx.save();
             ctx.beginPath();
-            ctx.rect(slot.x, slot.y, SLOT_W, slot.h);
+            ctx.rect(frameLayout.x, slot.y, frameLayout.w, slot.h);
             ctx.clip();
-            const { drawW, drawH, offsetX, offsetY } = coverFit(p.img.width, p.img.height, SLOT_W, slot.h);
+            const { drawW, drawH, offsetX, offsetY } = coverFit(p.img.width, p.img.height, frameLayout.w, slot.h);
             ctx.drawImage(
                 p.img,
-                slot.x + offsetX + p.offsetX,
+                frameLayout.x + offsetX + p.offsetX,
                 slot.y + offsetY + p.offsetY,
                 drawW, drawH
             );
             ctx.restore();
         });
 
-        // Frame di atas foto
-        ctx.drawImage(frameImgRef.current, 0, 0, FRAME_W, FRAME_H);
+        // Frame di atas foto (berdasarkan deteksi dinamis)
+        ctx.drawImage(frameImgRef.current, 0, frameLayout.drawY, FRAME_W, frameLayout.drawH);
 
         // Sync ke dup canvas
         const dup = dupCanvasRef.current;
@@ -241,18 +283,19 @@ export default function PhotoBooth() {
 
     // ── Photo logic ──
     const getNextAvailableSlot = () => {
-        for (let i = 0; i < SLOTS.length; i++)
+        if (!frameLayout) return null;
+        for (let i = 0; i < frameLayout.slots.length; i++)
             if (!photos.some((p) => p.slotIndex === i)) return i;
         return null;
     };
 
     const addPhoto = (img, replaceSlotIndex = null) => {
         const targetSlot = replaceSlotIndex !== null ? replaceSlotIndex : getNextAvailableSlot();
-        if (targetSlot === null) return;
+        if (targetSlot === null || !frameLayout) return;
         setPhotos((prev) => {
             const filtered = prev.filter((p) => p.slotIndex !== targetSlot);
             const next = [...filtered, { img, slotIndex: targetSlot, offsetX: 0, offsetY: 0 }];
-            if (next.length === 4) { setMode("decorate"); setAllPhotosTaken(true); setShowRetakeCamera(false); }
+            if (next.length === frameLayout.slots.length) { setMode("decorate"); setAllPhotosTaken(true); setShowRetakeCamera(false); }
             return next;
         });
         setSelectedPhotoIndex(null); setRetakeSlotIndex(null); setCanTakePhoto(true);
@@ -311,11 +354,13 @@ export default function PhotoBooth() {
         };
     };
     const handleMouseDown = (e) => {
+        if (!frameLayout) return;
         const { x, y } = getCoords(e);
         for (let i = photos.length - 1; i >= 0; i--) {
-            const p = photos[i], slot = SLOTS[p.slotIndex];
-            const { drawW, drawH, offsetX, offsetY } = coverFit(p.img.width, p.img.height, SLOT_W, slot.h);
-            const px = slot.x + offsetX + p.offsetX, py = slot.y + offsetY + p.offsetY;
+            const p = photos[i], slot = frameLayout.slots[p.slotIndex];
+            if (!slot) continue;
+            const { drawW, drawH, offsetX, offsetY } = coverFit(p.img.width, p.img.height, frameLayout.w, slot.h);
+            const px = frameLayout.x + offsetX + p.offsetX, py = slot.y + offsetY + p.offsetY;
             if (x >= px && x <= px + drawW && y >= py && y <= py + drawH) {
                 if (mode === "photo") {
                     setDraggingPhoto(i);
@@ -327,14 +372,15 @@ export default function PhotoBooth() {
         if (mode === "decorate") setSelectedPhotoIndex(null);
     };
     const handleMouseMove = (e) => {
-        if (draggingPhoto === null || mode !== "photo") return;
+        if (draggingPhoto === null || mode !== "photo" || !frameLayout) return;
         const { x, y } = getCoords(e);
         setPhotos((prev) => {
             const updated = [...prev];
             const p = updated[draggingPhoto];
-            const slot = SLOTS[p.slotIndex];
-            const { drawW, drawH } = coverFit(p.img.width, p.img.height, SLOT_W, slot.h);
-            const maxX = (drawW - SLOT_W) / 2;
+            const slot = frameLayout.slots[p.slotIndex];
+            if (!slot) return updated;
+            const { drawW, drawH } = coverFit(p.img.width, p.img.height, frameLayout.w, slot.h);
+            const maxX = (drawW - frameLayout.w) / 2;
             const maxY = (drawH - slot.h) / 2;
             p.offsetX = Math.min(Math.max(x - dragOffset.x, -maxX), maxX);
             p.offsetY = Math.min(Math.max(y - dragOffset.y, -maxY), maxY);
@@ -345,40 +391,43 @@ export default function PhotoBooth() {
 
     // ── Draw frame ke canvas video (satu strip) ──────────────────────────────
     // Menggunakan foto sebagai fallback jika video belum ready
-    const drawOneStrip = useCallback((ctx, videoEls, cW, cH, frameImg, curPhotos, renderScale = 1) => {
+    const drawOneStrip = useCallback((ctx, videoEls, cW, cH, frameImg, curPhotos, layout, renderScale = 1) => {
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, cW, cH);
+
+        if (!layout) return;
 
         ctx.save();
         ctx.scale(renderScale, renderScale);
 
         videoEls.forEach(({ video, slotIndex }) => {
-            const slot = SLOTS[slotIndex];
+            const slot = layout.slots[slotIndex];
+            if (!slot) return;
             const fallback = curPhotos.find((p) => p.slotIndex === slotIndex);
             
             ctx.save();
             // Clip area slot
             ctx.beginPath();
-            ctx.rect(slot.x, slot.y, SLOT_W, slot.h);
+            ctx.rect(layout.x, slot.y, layout.w, slot.h);
             ctx.clip();
 
             if (video && video.readyState >= 2 && video.videoWidth > 0) {
                 const { drawW, drawH, offsetX, offsetY } = coverFit(
-                    video.videoWidth, video.videoHeight, SLOT_W, slot.h
+                    video.videoWidth, video.videoHeight, layout.w, slot.h
                 );
                 // Mirror horizontal dari center slot
-                const centerX = slot.x + SLOT_W / 2;
+                const centerX = layout.x + layout.w / 2;
                 const centerY = slot.y + slot.h / 2;
                 ctx.translate(centerX, centerY);
                 ctx.scale(-1, 1);
                 ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
             } else if (fallback) {
                 const { drawW, drawH, offsetX, offsetY } = coverFit(
-                    fallback.img.width, fallback.img.height, SLOT_W, slot.h
+                    fallback.img.width, fallback.img.height, layout.w, slot.h
                 );
                 ctx.drawImage(
                     fallback.img,
-                    slot.x + offsetX + fallback.offsetX,
+                    layout.x + offsetX + fallback.offsetX,
                     slot.y + offsetY + fallback.offsetY,
                     drawW, drawH
                 );
@@ -386,7 +435,9 @@ export default function PhotoBooth() {
             ctx.restore();
         });
 
-        if (frameImg) ctx.drawImage(frameImg, 0, 0, FRAME_W, FRAME_H);
+        if (frameImg) {
+            ctx.drawImage(frameImg, 0, layout.drawY, FRAME_W, layout.drawH);
+        }
         ctx.restore();
     }, []);
 
@@ -417,7 +468,8 @@ export default function PhotoBooth() {
 
         // Buat video elements — loop=true untuk preview
         const videoElements = [];
-        for (let i = 0; i < 4; i++) {
+        const slotCount = frameLayout ? frameLayout.slots.length : 4;
+        for (let i = 0; i < slotCount; i++) {
             if (!allVideoBlobs.current[i]) continue;
             const v = document.createElement("video");
             v.src = URL.createObjectURL(allVideoBlobs.current[i]);
@@ -456,7 +508,7 @@ export default function PhotoBooth() {
         const photosSnap = photos.slice();
 
         // Capture freeze frame awal (frame pertama video di detik 0)
-        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, PREVIEW_SCALE);
+        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
 
         // Dapatkan durasi video untuk freeze end
@@ -480,7 +532,7 @@ export default function PhotoBooth() {
         ));
 
         // Capture freeze frame akhir (frame terakhir video)
-        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, PREVIEW_SCALE);
+        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
 
         // Reset ke awal
@@ -541,7 +593,7 @@ export default function PhotoBooth() {
 
             if (nextPhase === 0) renderFreezeStart();
             else if (nextPhase === 1) {
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, PREVIEW_SCALE);
+                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
                 mainCtx.drawImage(offscreenRef.current, 0, 0);
                 mainCtx.drawImage(offscreenRef.current, cW, 0);
             } else {
@@ -578,6 +630,8 @@ export default function PhotoBooth() {
                 const rc = document.createElement("canvas");
                 rc.width = cW * 2; rc.height = cH;
                 const rcCtx = rc.getContext("2d");
+                rcCtx.fillStyle = "#fff";
+                rcCtx.fillRect(0, 0, rc.width, rc.height);
 
                 const off = document.createElement("canvas");
                 off.width = cW; off.height = cH;
@@ -585,7 +639,8 @@ export default function PhotoBooth() {
 
                 // loop=false — tidak ada seam glitch
                 const videoElements = [];
-                for (let i = 0; i < 4; i++) {
+                const slotCount = frameLayout ? frameLayout.slots.length : 4;
+                for (let i = 0; i < slotCount; i++) {
                     if (!allVideoBlobs.current[i]) continue;
                     const v = document.createElement("video");
                     v.src = URL.createObjectURL(allVideoBlobs.current[i]);
@@ -620,7 +675,7 @@ export default function PhotoBooth() {
                 ));
 
                 // Capture freeze frame awal (frame pertama video di detik 0)
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, SCALE);
+                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
                 const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
 
                 // Dapatkan durasi video untuk freeze end
@@ -644,7 +699,7 @@ export default function PhotoBooth() {
                 ));
 
                 // Capture freeze frame akhir (frame terakhir video)
-                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, SCALE);
+                drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
                 const freezeEndData = offCtx.getImageData(0, 0, cW, cH);
 
                 // Reset ke awal
@@ -657,12 +712,14 @@ export default function PhotoBooth() {
 
                 const renderFreezeStart = () => {
                     offCtx.putImageData(freezeStartData, 0, 0);
+                    rcCtx.fillStyle = "#fff"; rcCtx.fillRect(0, 0, rc.width, rc.height);
                     rcCtx.drawImage(off, 0, 0);
                     rcCtx.drawImage(off, cW, 0);
                 };
 
                 const renderFreezeEnd = () => {
                     offCtx.putImageData(freezeEndData, 0, 0);
+                    rcCtx.fillStyle = "#fff"; rcCtx.fillRect(0, 0, rc.width, rc.height);
                     rcCtx.drawImage(off, 0, 0);
                     rcCtx.drawImage(off, cW, 0);
                 };
@@ -726,7 +783,8 @@ export default function PhotoBooth() {
 
                     if (nextPhase === 0) renderFreezeStart();
                     else if (nextPhase === 1) {
-                        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, SCALE);
+                        drawOneStrip(offCtx, videoElements, cW, cH, frameImg, photosSnapshot, frameLayout, SCALE);
+                        rcCtx.fillStyle = "#fff"; rcCtx.fillRect(0, 0, rc.width, rc.height);
                         rcCtx.drawImage(off, 0, 0);
                         rcCtx.drawImage(off, cW, 0);
                     } else {
@@ -748,12 +806,15 @@ export default function PhotoBooth() {
     const createCombinedPhotoBlob = () => {
         const src = canvasRef.current;
         if (!src) return Promise.resolve(null);
+        
         const combined = document.createElement("canvas");
         combined.width  = FRAME_W * 2;
         combined.height = FRAME_H;
+        
         const ctx = combined.getContext("2d");
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, combined.width, combined.height);
+        
         ctx.drawImage(src, 0, 0);
         ctx.drawImage(src, FRAME_W, 0);
         drawCuttingGuide(ctx, combined.width, combined.height);
@@ -858,9 +919,9 @@ export default function PhotoBooth() {
                                             <Webcam
                                                 audio={false} ref={webcamRef}
                                                 screenshotFormat="image/jpeg"
-                                                videoConstraints={videoConstraints}
+                                                videoConstraints={frameLayout ? { width: frameLayout.w, height: frameLayout.slots[0].h, facingMode: "user" } : { width: 953, height: 555, facingMode: "user" }}
                                                 mirrored={true}
-                                                style={{ width: "100%", borderRadius: 18, objectFit: "cover", aspectRatio: `${SLOT_W}/${SLOTS[0].h}` }}
+                                                style={{ width: "100%", borderRadius: 18, objectFit: "cover", aspectRatio: frameLayout ? `${frameLayout.w}/${frameLayout.slots[0].h}` : `953/555` }}
                                             />
                                             {countdown != null && <div style={S.countdownOverlay}>{countdown}</div>}
                                         </div>
@@ -903,11 +964,11 @@ export default function PhotoBooth() {
                                 <div style={S.previewLabel}>📸 Foto</div>
                                 <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
                                     <canvas ref={canvasRef}
-                                        style={{ width: 320, height: 800, display: "block", cursor: mode === "decorate" ? "pointer" : "default" }}
+                                        style={{ width: 320, height: 954, display: "block", cursor: mode === "decorate" ? "pointer" : "default" }}
                                         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
                                     />
                                     {mode === "decorate" && (
-                                        <canvas ref={dupCanvasRef} style={{ width: 320, height: 800, display: "block" }} />
+                                        <canvas ref={dupCanvasRef} style={{ width: 320, height: 954, display: "block" }} />
                                     )}
                                 </div>
                             </div>
@@ -916,8 +977,8 @@ export default function PhotoBooth() {
                             {allPhotosTaken && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                     <div style={S.previewLabel}>🎬 Video</div>
-                                    <div style={{ width: 640, height: 800, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                        <canvas ref={videoPreviewCanvasRef} style={{ width: 640, height: 800, display: "block" }} />
+                                    <div style={{ width: 640, height: 954, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                        <canvas ref={videoPreviewCanvasRef} style={{ width: 640, height: 954, display: "block" }} />
                                     </div>
                                 </div>
                             )}
