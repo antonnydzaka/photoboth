@@ -65,6 +65,7 @@ export default function PhotoBooth() {
     const canvasRef               = useRef(null);
     const decorateCanvasRef       = useRef(null);
     const videoPreviewCanvasRef   = useRef(null);
+    const keychainCanvasRef       = useRef(null);
     const frameImgRef             = useRef(null);
     const mediaRecorderRef        = useRef(null);
     const recordedChunksRef       = useRef([]);
@@ -99,6 +100,7 @@ export default function PhotoBooth() {
     const [saveProgress,       setSaveProgress]       = useState(0);
 
     const [frameLayout,        setFrameLayout]        = useState(null);
+    const [keychainFrameImg,   setKeychainFrameImg]   = useState(null);
 
     // ── Sticker State ──
     const [stickers,             setStickers]             = useState([]);
@@ -116,6 +118,7 @@ export default function PhotoBooth() {
     useEffect(() => {
         if (!selectedFrame) {
             setFrameLayout(null);
+            setKeychainFrameImg(null);
             return;
         }
         const img = new Image();
@@ -170,13 +173,20 @@ export default function PhotoBooth() {
                 drawY, drawH, x: leftX * scaleX, w: (rightX - leftX + 1) * scaleX,
                 slots: rawSlots.map(s => ({ y: (s.y * scaleY) + drawY, h: s.h * scaleY }))
             });
+            
+            // Load keychain frame fallback to normal frame if error
+            const kImg = new Image();
+            kImg.src = selectedFrame.replace('/frames/', '/keychain/');
+            kImg.crossOrigin = "Anonymous";
+            kImg.onload = () => setKeychainFrameImg(kImg);
+            kImg.onerror = () => setKeychainFrameImg(img);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedFrame]);
 
     // ── Redraw when photos or layout change ──
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(drawCanvas, [photos, photoCount, frameLayout, stickers, selectedStickerIndex, mode]);
+    useEffect(drawCanvas, [photos, photoCount, frameLayout, stickers, selectedStickerIndex, mode, keychainFrameImg]);
 
     // ── Draw main photo canvas ──
     function drawCanvas() {
@@ -247,6 +257,88 @@ export default function PhotoBooth() {
                 }
             });
         }
+        
+        drawKeychainCanvas();
+    }
+
+    function drawKeychainCanvas() {
+        const kcCanvas = keychainCanvasRef.current;
+        const targetFrame = keychainFrameImg || frameImgRef.current;
+        if (!kcCanvas || !targetFrame || !frameLayout || mode !== "decorate") return;
+        const ctx = kcCanvas.getContext("2d");
+        
+        // Resolusi tinggi untuk 3x6.5 cm per strip (6x6.5 cm total) -> ~600 DPI
+        const KC_STRIP_W = 709;
+        const KC_STRIP_H = 1535;
+        kcCanvas.width = KC_STRIP_W * 2;
+        kcCanvas.height = KC_STRIP_H;
+
+        const scaleX = KC_STRIP_W / FRAME_W;
+        const scaleY = KC_STRIP_H / FRAME_H;
+
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, kcCanvas.width, kcCanvas.height);
+
+        const renderStrip = (offsetX) => {
+            ctx.save();
+            ctx.translate(offsetX, 0);
+            
+            photos.forEach((p) => {
+                const slot = frameLayout.slots[p.slotIndex];
+                if (!slot) return;
+                
+                const newSlotX = frameLayout.x * scaleX;
+                const newSlotY = slot.y * scaleY;
+                const newSlotW = frameLayout.w * scaleX;
+                const newSlotH = slot.h * scaleY;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(newSlotX, newSlotY, newSlotW, newSlotH);
+                ctx.clip();
+                
+                // Recalculate coverFit for the squished slot so ratio doesn't break
+                const { drawW, drawH, offsetX: cOffsetX, offsetY: cOffsetY } = coverFit(p.img.width, p.img.height, newSlotW, newSlotH);
+                const panX = p.offsetX * scaleX;
+                const panY = p.offsetY * scaleY;
+
+                ctx.drawImage(
+                    p.img,
+                    newSlotX + cOffsetX + panX,
+                    newSlotY + cOffsetY + panY,
+                    drawW, drawH
+                );
+                ctx.restore();
+            });
+
+            // Draw frame (either keychain specific or squished original)
+            const frameDrawY = frameLayout.drawY * scaleY;
+            const frameDrawH = frameLayout.drawH * scaleY;
+            ctx.drawImage(targetFrame, 0, frameDrawY, KC_STRIP_W, frameDrawH);
+            ctx.restore();
+        };
+
+        renderStrip(0);
+        renderStrip(KC_STRIP_W);
+
+        // Separator
+        ctx.strokeStyle = "#ccc";
+        ctx.setLineDash([15, 15]);
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(KC_STRIP_W, 0);
+        ctx.lineTo(KC_STRIP_W, KC_STRIP_H);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Scale stickers
+        stickers.forEach((s) => {
+            const sScaleX = (KC_STRIP_W * 2) / (FRAME_W * 2);
+            const sScaleY = KC_STRIP_H / FRAME_H;
+            ctx.drawImage(s.img, s.x * sScaleX, s.y * sScaleY, s.w * sScaleX, s.h * sScaleY);
+        });
+        
+        drawCuttingGuide(ctx, kcCanvas.width, kcCanvas.height);
     }
 
     // ── Timer ──
@@ -891,6 +983,13 @@ export default function PhotoBooth() {
         return new Promise((r) => combined.toBlob(r, "image/jpeg", 0.95));
     };
 
+    // ── Create keychain blob ──────────────────────────────────────────────────
+    const createCombinedKeychainBlob = () => {
+        const src = keychainCanvasRef.current;
+        if (!src) return Promise.resolve(null);
+        return new Promise((r) => src.toBlob(r, "image/jpeg", 0.95));
+    };
+
     // ── Save file ──
     const saveFile = async (filename, blob) => {
         try {
@@ -916,11 +1015,15 @@ export default function PhotoBooth() {
         setSaveProgress(10);
         const photoBlob = await createCombinedPhotoBlob();
         if (photoBlob) await saveFile(`${fileBase}.jpg`, photoBlob);
-        setSaveProgress(45);
+        setSaveProgress(35);
+        
+        const keychainBlob = await createCombinedKeychainBlob();
+        if (keychainBlob) await saveFile(`${fileBase}-keychain.jpg`, keychainBlob);
+        setSaveProgress(60);
+
         const videoBlob = await createCombinedVideoBlob();
         setSaveProgress(92);
         if (videoBlob) {
-            // Selalu simpan sebagai .mp4 sesuai requirement (master prome)
             await saveFile(`${fileBase}.mp4`, videoBlob);
         }
         setSaveProgress(100);
@@ -1086,6 +1189,16 @@ export default function PhotoBooth() {
                                 </div>
                             )}
 
+                            {/* Keychain preview */}
+                            {allPhotosTaken && (
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                    <div style={S.previewLabel}>🔑 Keychain</div>
+                                    <div style={{ width: 440, height: 476, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                        <canvas ref={keychainCanvasRef} style={{ width: 440, height: 476, display: "block" }} />
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Finish */}
                             {mode === "decorate" && allPhotosTaken && (
                                 <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
@@ -1141,6 +1254,7 @@ export default function PhotoBooth() {
                         {nameError && <div style={S.errorText}>{nameError}</div>}
                         <label style={S.inputLabel}>Nomor Telepon</label>
                         <input id="ph" type="tel" placeholder="08123456789 atau +62812..."
+                            autoComplete="off"
                             value={userPhone}
                             onChange={(e) => { setUserPhone(e.target.value); setPhoneError(""); }}
                             onKeyPress={(e) => { if (e.key === "Enter") handleNameSubmit(); }}
