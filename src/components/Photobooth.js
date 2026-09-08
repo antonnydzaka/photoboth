@@ -19,6 +19,13 @@ const FRAME_OPTIONS = [
     "/assets/frames/heart-frame-4.png",
 ];
 
+const KEYCHAIN_OPTIONS = [
+    "/assets/keychain/heart-frame.png",
+    "/assets/keychain/heart-frame-2.png",
+    "/assets/keychain/heart-frame-3.png",
+    "/assets/keychain/heart-frame-4.png",
+];
+
 // ─── STICKER OPTIONS ──────────────────────────────────────────────────────────
 const STICKER_OPTIONS = [
     "/assets/stickers/leaf.png",
@@ -77,6 +84,7 @@ export default function PhotoBooth() {
     const offscreenRef            = useRef(null);
 
     const [selectedFrame,     setSelectedFrame]     = useState(null);
+    const [selectedKeychain,  setSelectedKeychain]  = useState(null);
     const [mode,               setMode]               = useState("photo");
     const [sessionStarted,     setSessionStarted]     = useState(false);
     const [sessionTimeLeft,    setSessionTimeLeft]    = useState(180);
@@ -173,16 +181,23 @@ export default function PhotoBooth() {
                 drawY, drawH, x: leftX * scaleX, w: (rightX - leftX + 1) * scaleX,
                 slots: rawSlots.map(s => ({ y: (s.y * scaleY) + drawY, h: s.h * scaleY }))
             });
-            
-            // Load keychain frame fallback to normal frame if error
-            const kImg = new Image();
-            kImg.src = selectedFrame.replace('/frames/', '/keychain/');
-            kImg.crossOrigin = "Anonymous";
-            kImg.onload = () => setKeychainFrameImg(kImg);
-            kImg.onerror = () => setKeychainFrameImg(img);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedFrame]);
+
+    useEffect(() => {
+        if (!selectedKeychain) {
+            setKeychainFrameImg(null);
+            return;
+        }
+        const kImg = new Image();
+        kImg.src = selectedKeychain;
+        kImg.crossOrigin = "Anonymous";
+        kImg.onload = () => setKeychainFrameImg(kImg);
+        kImg.onerror = () => {
+            if (frameImgRef.current) setKeychainFrameImg(frameImgRef.current);
+        };
+    }, [selectedKeychain]);
 
     // ── Redraw when photos or layout change ──
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -416,8 +431,13 @@ export default function PhotoBooth() {
     };
 
     const handleBack = () => {
-        setSelectedFrame(null); setMode("photo");
-        setCanTakePhoto(false); setSelectedPhotoIndex(null); setRetakeSlotIndex(null);
+        if (selectedKeychain) {
+            setSelectedKeychain(null);
+            setCanTakePhoto(false);
+        } else {
+            setSelectedFrame(null); setMode("photo");
+            setCanTakePhoto(false); setSelectedPhotoIndex(null); setRetakeSlotIndex(null);
+        }
     };
 
     // ── Photo logic ──
@@ -1030,7 +1050,7 @@ export default function PhotoBooth() {
         setIsSaving(false); setShowSuccessPopup(true);
         setTimeout(() => {
             setShowSuccessPopup(false); stopVideoPreview(); allVideoBlobs.current = {};
-            setSessionStarted(false); setCanTakePhoto(false); setSelectedFrame(null);
+            setSessionStarted(false); setCanTakePhoto(false); setSelectedFrame(null); setSelectedKeychain(null);
             setMode("photo"); setPhotos([]); setPhotoCount(0);
             setSelectedPhotoIndex(null); setRetakeSlotIndex(null);
             setCountdown(null); setSessionTimeLeft(180);
@@ -1053,7 +1073,7 @@ export default function PhotoBooth() {
                 )}
                 {sessionStarted && <div style={S.timerBadge}>{formatTime(sessionTimeLeft)}</div>}
                 <h1 style={S.titleBar}>
-                    {!selectedFrame ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"
+                    {(!selectedFrame || !selectedKeychain) ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"
                         : mode === "photo" ? "⋆｡‧˚ʚ Smile :)ɞ˚‧｡⋆"
                         : ". ݁₊ ⊹ . ݁Let's decorate . ⊹ ₊ ݁."}
                 </h1>
@@ -1072,7 +1092,7 @@ export default function PhotoBooth() {
                             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "center" }}>
                                 {FRAME_OPTIONS.map((src) => (
                                     <img key={src} src={src} alt="frame"
-                                        onClick={() => { setSelectedFrame(src); setCanTakePhoto(true); }}
+                                        onClick={() => { setSelectedFrame(src); }}
                                         onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
                                         onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
                                         style={{ ...S.frameThumb, transform: selectedFrame === src ? "scale(1.08)" : "scale(1)" }}
@@ -1081,6 +1101,20 @@ export default function PhotoBooth() {
                             </div>
                         </div>
                     )
+                ) : !selectedKeychain ? (
+                    <div style={S.col}>
+                        <div style={{ fontSize: 52, color: "#8c5b4a", fontWeight: "bold" }}>Pilih keychain frame kamu</div>
+                        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "center" }}>
+                            {KEYCHAIN_OPTIONS.map((src) => (
+                                <img key={src} src={src} alt="keychain frame"
+                                    onClick={() => { setSelectedKeychain(src); setCanTakePhoto(true); }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                                    style={{ ...S.frameThumb, transform: selectedKeychain === src ? "scale(1.08)" : "scale(1)" }}
+                                />
+                            ))}
+                        </div>
+                    </div>
                 ) : (
                     <div style={{ display: "flex", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
                         {/* LEFT: webcam */}
