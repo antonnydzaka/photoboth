@@ -108,6 +108,7 @@ export default function PhotoBooth() {
     const [saveProgress,       setSaveProgress]       = useState(0);
 
     const [frameLayout,        setFrameLayout]        = useState(null);
+    const [keychainLayout,     setKeychainLayout]     = useState(null);
     const [keychainFrameImg,   setKeychainFrameImg]   = useState(null);
 
     // ── Sticker State ──
@@ -188,20 +189,65 @@ export default function PhotoBooth() {
     useEffect(() => {
         if (!selectedKeychain) {
             setKeychainFrameImg(null);
+            setKeychainLayout(null);
             return;
         }
         const kImg = new Image();
         kImg.src = selectedKeychain;
         kImg.crossOrigin = "Anonymous";
-        kImg.onload = () => setKeychainFrameImg(kImg);
+        kImg.onload = () => {
+            setKeychainFrameImg(kImg);
+            
+            // Scan alpha channel untuk mendeteksi posisi lubang pada keychain
+            const cvs = document.createElement("canvas");
+            cvs.width = kImg.naturalWidth; cvs.height = kImg.naturalHeight;
+            const ctx = cvs.getContext("2d");
+            ctx.drawImage(kImg, 0, 0);
+            const data = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
+            
+            let leftX = 9999, rightX = 0;
+            const rawSlots = [];
+            let inSlot = false, currentSlot = null;
+            
+            for(let y = 0; y < cvs.height; y++) {
+                let rowHasTrans = false, rowLeft = 9999, rowRight = 0;
+                for(let x = 0; x < cvs.width; x++) {
+                    if (data[(cvs.width * y + x) * 4 + 3] < 50) {
+                        rowHasTrans = true;
+                        if (x < rowLeft) rowLeft = x;
+                        if (x > rowRight) rowRight = x;
+                    }
+                }
+                if (rowHasTrans) {
+                    if (!inSlot) {
+                        inSlot = true; currentSlot = { yStart: y, yEnd: y };
+                        leftX = Math.min(leftX, rowLeft); rightX = Math.max(rightX, rowRight);
+                    } else {
+                        currentSlot.yEnd = y;
+                        leftX = Math.min(leftX, rowLeft); rightX = Math.max(rightX, rowRight);
+                    }
+                } else if (inSlot) {
+                    inSlot = false;
+                    rawSlots.push({ y: currentSlot.yStart, h: currentSlot.yEnd - currentSlot.yStart + 1 });
+                }
+            }
+            if (inSlot) rawSlots.push({ y: currentSlot.yStart, h: currentSlot.yEnd - currentSlot.yStart + 1 });
+            
+            setKeychainLayout({
+                x: leftX, 
+                w: rightX - leftX + 1,
+                slots: rawSlots.map(s => ({ y: s.y, h: s.h }))
+            });
+        };
         kImg.onerror = () => {
             if (frameImgRef.current) setKeychainFrameImg(frameImgRef.current);
+            setKeychainLayout(null);
         };
     }, [selectedKeychain]);
 
     // ── Redraw when photos or layout change ──
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(drawCanvas, [photos, photoCount, frameLayout, stickers, selectedStickerIndex, mode, keychainFrameImg]);
+    useEffect(drawCanvas, [photos, photoCount, frameLayout, stickers, selectedStickerIndex, mode, keychainFrameImg, keychainLayout]);
 
     // ── Draw main photo canvas ──
     function drawCanvas() {
@@ -279,17 +325,23 @@ export default function PhotoBooth() {
     function drawKeychainCanvas() {
         const kcCanvas = keychainCanvasRef.current;
         const targetFrame = keychainFrameImg || frameImgRef.current;
-        if (!kcCanvas || !targetFrame || !frameLayout || mode !== "decorate") return;
+        const activeLayout = keychainLayout || frameLayout;
+        
+        if (!kcCanvas || !targetFrame || !activeLayout || !frameLayout || mode !== "decorate") return;
         const ctx = kcCanvas.getContext("2d");
         
         // Resolusi tinggi untuk 3x6.5 cm per strip (6x6.5 cm total) -> ~600 DPI
         const KC_STRIP_W = 709;
         const KC_STRIP_H = 1535;
+        
         kcCanvas.width = KC_STRIP_W * 2;
         kcCanvas.height = KC_STRIP_H;
 
-        const scaleX = KC_STRIP_W / FRAME_W;
-        const scaleY = KC_STRIP_H / FRAME_H;
+        const baseW = activeLayout === keychainLayout ? targetFrame.naturalWidth : FRAME_W;
+        const baseH = activeLayout === keychainLayout ? targetFrame.naturalHeight : FRAME_H;
+        
+        const scaleX = KC_STRIP_W / baseW;
+        const scaleY = KC_STRIP_H / baseH;
 
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, kcCanvas.width, kcCanvas.height);
@@ -299,37 +351,53 @@ export default function PhotoBooth() {
             ctx.translate(offsetX, 0);
             
             photos.forEach((p) => {
-                const slot = frameLayout.slots[p.slotIndex];
-                if (!slot) return;
+                const kSlot = activeLayout.slots[p.slotIndex];
+                const fSlot = frameLayout.slots[p.slotIndex];
+                if (!kSlot || !fSlot) return;
                 
-                const newSlotX = frameLayout.x * scaleX;
-                const newSlotY = slot.y * scaleY;
-                const newSlotW = frameLayout.w * scaleX;
-                const newSlotH = slot.h * scaleY;
+                const newSlotX = activeLayout.x * scaleX;
+                const newSlotY = kSlot.y * scaleY;
+                const newSlotW = activeLayout.w * scaleX;
+                const newSlotH = kSlot.h * scaleY;
 
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(newSlotX, newSlotY, newSlotW, newSlotH);
                 ctx.clip();
                 
-                // Recalculate coverFit for the squished slot so ratio doesn't break
-                const { drawW, drawH, offsetX: cOffsetX, offsetY: cOffsetY } = coverFit(p.img.width, p.img.height, newSlotW, newSlotH);
-                const panX = p.offsetX * scaleX;
-                const panY = p.offsetY * scaleY;
+                // Hitung coverFit berdasarkan ukuran slot ORIGINAL di frame utama
+                const origCover = coverFit(p.img.width, p.img.height, frameLayout.w, fSlot.h);
+                
+                // Hitung faktor skala peregangan (stretch) dari slot asli ke slot keychain
+                const stretchX = newSlotW / frameLayout.w;
+                const stretchY = newSlotH / fSlot.h;
+                
+                // Terapkan peregangan pada ukuran dan posisi gambar agar persis mengikuti komposisi aslinya
+                const drawW = origCover.drawW * stretchX;
+                const drawH = origCover.drawH * stretchY;
+                
+                const finalOffsetX = (origCover.offsetX + p.offsetX) * stretchX;
+                const finalOffsetY = (origCover.offsetY + p.offsetY) * stretchY;
 
                 ctx.drawImage(
                     p.img,
-                    newSlotX + cOffsetX + panX,
-                    newSlotY + cOffsetY + panY,
+                    newSlotX + finalOffsetX,
+                    newSlotY + finalOffsetY,
                     drawW, drawH
                 );
                 ctx.restore();
             });
 
             // Draw frame (either keychain specific or squished original)
-            const frameDrawY = frameLayout.drawY * scaleY;
-            const frameDrawH = frameLayout.drawH * scaleY;
-            ctx.drawImage(targetFrame, 0, frameDrawY, KC_STRIP_W, frameDrawH);
+            if (activeLayout === keychainLayout) {
+                ctx.drawImage(targetFrame, 0, 0, KC_STRIP_W, KC_STRIP_H);
+            } else {
+                const scaleYFallback = KC_STRIP_H / FRAME_H;
+                const frameDrawY = frameLayout.drawY * scaleYFallback;
+                const frameDrawH = frameLayout.drawH * scaleYFallback;
+                ctx.drawImage(targetFrame, 0, frameDrawY, KC_STRIP_W, frameDrawH);
+            }
+            
             ctx.restore();
         };
 

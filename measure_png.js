@@ -1,7 +1,8 @@
 const fs = require('fs');
 const PNG = require('pngjs').PNG;
 
-fs.createReadStream('./public/assets/frames/heart-frame.png')
+const file = process.argv[2] || './public/assets/frames/heart-frame.png';
+fs.createReadStream(file)
     .pipe(new PNG({ filterType: 4 }))
     .on('parsed', function() {
         const slots = [];
