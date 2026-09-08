@@ -11,26 +11,19 @@ const OLD_FRAME_OFFSET_Y = (3576 - 3000) / 2; // 288
 
 
 
-// ─── FRAME OPTIONS ────────────────────────────────────────────────────────────
-const FRAME_OPTIONS = [
-    "/assets/frames/heart-frame.png",
-    "/assets/frames/heart-frame-2.png",
-    "/assets/frames/heart-frame-3.png",
-    "/assets/frames/heart-frame-4.png",
-];
+// ─── FRAME OPTIONS (Dynamic: 1..10, tampil seadanya) ──────────────────────────
+const MAX_FRAMES = 10;
+const MAX_KEYCHAINS = 10;
+const MAX_STICKERS = 15;
 
-const KEYCHAIN_OPTIONS = [
-    "/assets/keychain/heart-frame.png",
-    "/assets/keychain/heart-frame-2.png",
-    "/assets/keychain/heart-frame-3.png",
-    "/assets/keychain/heart-frame-4.png",
-];
+const FRAME_OPTIONS = Array.from({ length: MAX_FRAMES }, (_, i) => `/assets/frames/frame-${i + 1}.png`);
+const KEYCHAIN_OPTIONS = Array.from({ length: MAX_KEYCHAINS }, (_, i) => `/assets/keychain/keychain-${i + 1}.png`);
+const STICKER_OPTIONS = Array.from({ length: MAX_STICKERS }, (_, i) => `/assets/stickers/sticker-${i + 1}.png`);
 
-// ─── STICKER OPTIONS ──────────────────────────────────────────────────────────
-const STICKER_OPTIONS = [
-    "/assets/stickers/leaf.png",
-    "/assets/stickers/sparkles.png",
-];
+// ─── BACKGROUND OPTIONS ───────────────────────────────────────────────────────
+const BG_WELCOME = "/assets/backgrounds/bg-welcome.png";
+const BG_SMILE = "/assets/backgrounds/bg-smile.png";
+const BG_DECORATE = "/assets/backgrounds/bg-decorate.png";
 
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -68,57 +61,62 @@ const drawCuttingGuide = (ctx, totalWidth, totalHeight) => {
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function PhotoBooth() {
-    const webcamRef               = useRef(null);
-    const canvasRef               = useRef(null);
-    const decorateCanvasRef       = useRef(null);
-    const videoPreviewCanvasRef   = useRef(null);
-    const keychainCanvasRef       = useRef(null);
-    const frameImgRef             = useRef(null);
-    const mediaRecorderRef        = useRef(null);
-    const recordedChunksRef       = useRef([]);
-    const liveVideoBlobRef        = useRef(null);
-    const allVideoBlobs           = useRef({});
-    const videoPreviewAnimRef     = useRef(null);
+    const webcamRef = useRef(null);
+    const canvasRef = useRef(null);
+    const decorateCanvasRef = useRef(null);
+    const videoPreviewCanvasRef = useRef(null);
+    const keychainCanvasRef = useRef(null);
+    const frameImgRef = useRef(null);
+    const mediaRecorderRef = useRef(null);
+    const recordedChunksRef = useRef([]);
+    const liveVideoBlobRef = useRef(null);
+    const allVideoBlobs = useRef({});
+    const videoPreviewAnimRef = useRef(null);
     const videoPreviewElementsRef = useRef([]);
     // Offscreen canvas persisten untuk preview (tidak re-create tiap frame)
-    const offscreenRef            = useRef(null);
+    const offscreenRef = useRef(null);
 
-    const [selectedFrame,     setSelectedFrame]     = useState(null);
-    const [selectedKeychain,  setSelectedKeychain]  = useState(null);
-    const [mode,               setMode]               = useState("photo");
-    const [sessionStarted,     setSessionStarted]     = useState(false);
-    const [sessionTimeLeft,    setSessionTimeLeft]    = useState(180);
+    const [selectedFrame, setSelectedFrame] = useState(null);
+    const [selectedKeychain, setSelectedKeychain] = useState(null);
+    const [mode, setMode] = useState("photo");
+    const [sessionStarted, setSessionStarted] = useState(false);
+    const [sessionTimeLeft, setSessionTimeLeft] = useState(180);
     const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
-    const [retakeSlotIndex,    setRetakeSlotIndex]    = useState(null);
-    const [userName,           setUserName]           = useState("");
-    const [userPhone,          setUserPhone]          = useState("");
-    const [showNameInput,      setShowNameInput]      = useState(false);
-    const [nameError,          setNameError]          = useState("");
-    const [phoneError,         setPhoneError]         = useState("");
-    const [photos,             setPhotos]             = useState([]);
-    const [photoCount,         setPhotoCount]         = useState(0);
-    const [canTakePhoto,       setCanTakePhoto]       = useState(true);
-    const [draggingPhoto,      setDraggingPhoto]      = useState(null);
-    const [dragOffset,         setDragOffset]         = useState({ x: 0, y: 0 });
-    const [countdown,          setCountdown]          = useState(null);
-    const [allPhotosTaken,     setAllPhotosTaken]     = useState(false);
-    const [showRetakeCamera,   setShowRetakeCamera]   = useState(false);
-    const [showSuccessPopup,   setShowSuccessPopup]   = useState(false);
-    const [isSaving,           setIsSaving]           = useState(false);
-    const [saveProgress,       setSaveProgress]       = useState(0);
+    const [retakeSlotIndex, setRetakeSlotIndex] = useState(null);
+    const [userName, setUserName] = useState("");
+    const [userPhone, setUserPhone] = useState("");
+    const [showNameInput, setShowNameInput] = useState(false);
+    const [nameError, setNameError] = useState("");
+    const [phoneError, setPhoneError] = useState("");
+    const [photos, setPhotos] = useState([]);
+    const [photoCount, setPhotoCount] = useState(0);
+    const [canTakePhoto, setCanTakePhoto] = useState(true);
+    const [draggingPhoto, setDraggingPhoto] = useState(null);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [countdown, setCountdown] = useState(null);
+    const [allPhotosTaken, setAllPhotosTaken] = useState(false);
+    const [showRetakeCamera, setShowRetakeCamera] = useState(false);
+    const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveProgress, setSaveProgress] = useState(0);
 
-    const [frameLayout,        setFrameLayout]        = useState(null);
-    const [keychainLayout,     setKeychainLayout]     = useState(null);
-    const [keychainFrameImg,   setKeychainFrameImg]   = useState(null);
+    const [frameLayout, setFrameLayout] = useState(null);
+    const [keychainLayout, setKeychainLayout] = useState(null);
+    const [keychainFrameImg, setKeychainFrameImg] = useState(null);
 
     // ── Sticker State ──
-    const [stickers,             setStickers]             = useState([]);
+    const [stickers, setStickers] = useState([]);
     const [draggingStickerIndex, setDraggingStickerIndex] = useState(null);
     const [selectedStickerIndex, setSelectedStickerIndex] = useState(null);
-    const [stickerDragOffset,    setStickerDragOffset]    = useState({ x: 0, y: 0 });
-    const [showStickerModal,     setShowStickerModal]     = useState(false);
-    const [activeStampSrc,       setActiveStampSrc]       = useState(null);
-    const stickersRef            = useRef([]);
+    const [stickerDragOffset, setStickerDragOffset] = useState({ x: 0, y: 0 });
+    const [showStickerModal, setShowStickerModal] = useState(false);
+    const [activeStampSrc, setActiveStampSrc] = useState(null);
+
+    // ── Dynamic asset loading: track failed images ──
+    const [failedFrames, setFailedFrames] = useState(new Set());
+    const [failedKeychains, setFailedKeychains] = useState(new Set());
+    const [failedStickers, setFailedStickers] = useState(new Set());
+    const stickersRef = useRef([]);
 
     useEffect(() => { setPhotoCount(photos.length); }, [photos]);
     useEffect(() => { stickersRef.current = stickers; }, [stickers]);
@@ -133,23 +131,23 @@ export default function PhotoBooth() {
         const img = new Image();
         img.src = selectedFrame;
         img.crossOrigin = "Anonymous";
-        img.onload = () => { 
-            frameImgRef.current = img; 
-            
+        img.onload = () => {
+            frameImgRef.current = img;
+
             // Scan alpha channel untuk mendeteksi posisi lubang transparan secara cerdas!
             const cvs = document.createElement("canvas");
             cvs.width = img.naturalWidth; cvs.height = img.naturalHeight;
             const ctx = cvs.getContext("2d");
             ctx.drawImage(img, 0, 0);
             const data = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
-            
+
             let leftX = 9999, rightX = 0;
             const rawSlots = [];
             let inSlot = false, currentSlot = null;
-            
-            for(let y = 0; y < cvs.height; y++) {
+
+            for (let y = 0; y < cvs.height; y++) {
                 let rowHasTrans = false, rowLeft = 9999, rowRight = 0;
-                for(let x = 0; x < cvs.width; x++) {
+                for (let x = 0; x < cvs.width; x++) {
                     if (data[(cvs.width * y + x) * 4 + 3] < 50) {
                         rowHasTrans = true;
                         if (x < rowLeft) rowLeft = x;
@@ -170,14 +168,14 @@ export default function PhotoBooth() {
                 }
             }
             if (inSlot) rawSlots.push({ y: currentSlot.yStart, h: currentSlot.yEnd - currentSlot.yStart + 1 });
-            
+
             let drawY = 0, drawH = FRAME_H, scaleY = FRAME_H / cvs.height, scaleX = FRAME_W / cvs.width;
-            
+
             // Kompatibilitas untuk frame lama 1200x3000 agar tidak ditarik gepeng
             if (cvs.height === 3000 && cvs.width === 1200) {
                 drawY = OLD_FRAME_OFFSET_Y; drawH = 3000; scaleY = 1;
             }
-            
+
             setFrameLayout({
                 drawY, drawH, x: leftX * scaleX, w: (rightX - leftX + 1) * scaleX,
                 slots: rawSlots.map(s => ({ y: (s.y * scaleY) + drawY, h: s.h * scaleY }))
@@ -197,21 +195,21 @@ export default function PhotoBooth() {
         kImg.crossOrigin = "Anonymous";
         kImg.onload = () => {
             setKeychainFrameImg(kImg);
-            
+
             // Scan alpha channel untuk mendeteksi posisi lubang pada keychain
             const cvs = document.createElement("canvas");
             cvs.width = kImg.naturalWidth; cvs.height = kImg.naturalHeight;
             const ctx = cvs.getContext("2d");
             ctx.drawImage(kImg, 0, 0);
             const data = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
-            
+
             let leftX = 9999, rightX = 0;
             const rawSlots = [];
             let inSlot = false, currentSlot = null;
-            
-            for(let y = 0; y < cvs.height; y++) {
+
+            for (let y = 0; y < cvs.height; y++) {
                 let rowHasTrans = false, rowLeft = 9999, rowRight = 0;
-                for(let x = 0; x < cvs.width; x++) {
+                for (let x = 0; x < cvs.width; x++) {
                     if (data[(cvs.width * y + x) * 4 + 3] < 50) {
                         rowHasTrans = true;
                         if (x < rowLeft) rowLeft = x;
@@ -232,9 +230,9 @@ export default function PhotoBooth() {
                 }
             }
             if (inSlot) rawSlots.push({ y: currentSlot.yStart, h: currentSlot.yEnd - currentSlot.yStart + 1 });
-            
+
             setKeychainLayout({
-                x: leftX, 
+                x: leftX,
                 w: rightX - leftX + 1,
                 slots: rawSlots.map(s => ({ y: s.y, h: s.h }))
             });
@@ -254,7 +252,7 @@ export default function PhotoBooth() {
         const canvas = canvasRef.current;
         if (!canvas || !frameImgRef.current || !frameLayout) return;
         const ctx = canvas.getContext("2d");
-        canvas.width  = FRAME_W;
+        canvas.width = FRAME_W;
         canvas.height = FRAME_H;
 
         // Background putih
@@ -288,12 +286,12 @@ export default function PhotoBooth() {
             const decCtx = decCanvas.getContext("2d");
             decCanvas.width = FRAME_W * 2;
             decCanvas.height = FRAME_H;
-            
+
             // Draw left strip
             decCtx.drawImage(canvas, 0, 0);
             // Draw right strip
             decCtx.drawImage(canvas, FRAME_W, 0);
-            
+
             // Draw separator line
             decCtx.strokeStyle = "#ccc";
             decCtx.setLineDash([15, 15]);
@@ -318,7 +316,7 @@ export default function PhotoBooth() {
                 }
             });
         }
-        
+
         drawKeychainCanvas();
     }
 
@@ -326,20 +324,20 @@ export default function PhotoBooth() {
         const kcCanvas = keychainCanvasRef.current;
         const targetFrame = keychainFrameImg || frameImgRef.current;
         const activeLayout = keychainLayout || frameLayout;
-        
+
         if (!kcCanvas || !targetFrame || !activeLayout || !frameLayout || mode !== "decorate") return;
         const ctx = kcCanvas.getContext("2d");
-        
+
         // Resolusi tinggi untuk 3x6.5 cm per strip (6x6.5 cm total) -> ~600 DPI
         const KC_STRIP_W = 709;
         const KC_STRIP_H = 1535;
-        
+
         kcCanvas.width = KC_STRIP_W * 2;
         kcCanvas.height = KC_STRIP_H;
 
         const baseW = activeLayout === keychainLayout ? targetFrame.naturalWidth : FRAME_W;
         const baseH = activeLayout === keychainLayout ? targetFrame.naturalHeight : FRAME_H;
-        
+
         const scaleX = KC_STRIP_W / baseW;
         const scaleY = KC_STRIP_H / baseH;
 
@@ -349,12 +347,12 @@ export default function PhotoBooth() {
         const renderStrip = (offsetX) => {
             ctx.save();
             ctx.translate(offsetX, 0);
-            
+
             photos.forEach((p) => {
                 const kSlot = activeLayout.slots[p.slotIndex];
                 const fSlot = frameLayout.slots[p.slotIndex];
                 if (!kSlot || !fSlot) return;
-                
+
                 const newSlotX = activeLayout.x * scaleX;
                 const newSlotY = kSlot.y * scaleY;
                 const newSlotW = activeLayout.w * scaleX;
@@ -364,18 +362,18 @@ export default function PhotoBooth() {
                 ctx.beginPath();
                 ctx.rect(newSlotX, newSlotY, newSlotW, newSlotH);
                 ctx.clip();
-                
+
                 // Hitung coverFit berdasarkan ukuran slot ORIGINAL di frame utama
                 const origCover = coverFit(p.img.width, p.img.height, frameLayout.w, fSlot.h);
-                
+
                 // Hitung faktor skala peregangan (stretch) dari slot asli ke slot keychain
                 const stretchX = newSlotW / frameLayout.w;
                 const stretchY = newSlotH / fSlot.h;
-                
+
                 // Terapkan peregangan pada ukuran dan posisi gambar agar persis mengikuti komposisi aslinya
                 const drawW = origCover.drawW * stretchX;
                 const drawH = origCover.drawH * stretchY;
-                
+
                 const finalOffsetX = (origCover.offsetX + p.offsetX) * stretchX;
                 const finalOffsetY = (origCover.offsetY + p.offsetY) * stretchY;
 
@@ -397,7 +395,7 @@ export default function PhotoBooth() {
                 const frameDrawH = frameLayout.drawH * scaleYFallback;
                 ctx.drawImage(targetFrame, 0, frameDrawY, KC_STRIP_W, frameDrawH);
             }
-            
+
             ctx.restore();
         };
 
@@ -420,7 +418,7 @@ export default function PhotoBooth() {
             const sScaleY = KC_STRIP_H / FRAME_H;
             ctx.drawImage(s.img, s.x * sScaleX, s.y * sScaleY, s.w * sScaleX, s.h * sScaleY);
         });
-        
+
         drawCuttingGuide(ctx, kcCanvas.width, kcCanvas.height);
     }
 
@@ -460,7 +458,7 @@ export default function PhotoBooth() {
             liveVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: mimeType });
             recordedChunksRef.current = [];
         };
-        recorder.start(); 
+        recorder.start();
         mediaRecorderRef.current = recorder;
     };
 
@@ -486,8 +484,8 @@ export default function PhotoBooth() {
 
     const handleNameSubmit = () => {
         let valid = true;
-        if (!userName.trim())            { setNameError("⚠️ Nama harus diisi!"); valid = false; } else setNameError("");
-        if (!userPhone.trim())           { setPhoneError("⚠️ Nomor telepon harus diisi!"); valid = false; }
+        if (!userName.trim()) { setNameError("⚠️ Nama harus diisi!"); valid = false; } else setNameError("");
+        if (!userPhone.trim()) { setPhoneError("⚠️ Nomor telepon harus diisi!"); valid = false; }
         else if (!isValidPhone(userPhone)) { setPhoneError("⚠️ Format tidak valid (contoh: 08123456789)"); valid = false; }
         else setPhoneError("");
         if (!valid) return;
@@ -607,13 +605,13 @@ export default function PhotoBooth() {
         const scaleX = (mode === "decorate" ? FRAME_W * 2 : FRAME_W) / r.width;
         return {
             x: (e.clientX - r.left) * scaleX,
-            y: (e.clientY - r.top)  * (FRAME_H / r.height),
+            y: (e.clientY - r.top) * (FRAME_H / r.height),
         };
     };
     const handleMouseDown = (e) => {
         if (!frameLayout) return;
         const { x, y } = getCoords(e);
-        
+
         // 1. Cek Stiker (hanya di mode decorate)
         if (mode === "decorate") {
             if (activeStampSrc) {
@@ -653,7 +651,7 @@ export default function PhotoBooth() {
     const handleMouseMove = (e) => {
         if (!frameLayout) return;
         const { x, y } = getCoords(e);
-        
+
         if (draggingStickerIndex !== null && mode === "decorate") {
             setStickers(prev => {
                 const updated = [...prev];
@@ -698,7 +696,7 @@ export default function PhotoBooth() {
             const slot = layout.slots[slotIndex];
             if (!slot) return;
             const fallback = curPhotos.find((p) => p.slotIndex === slotIndex);
-            
+
             ctx.save();
             // Clip area slot
             ctx.beginPath();
@@ -752,12 +750,12 @@ export default function PhotoBooth() {
 
         const previewCanvas = videoPreviewCanvasRef.current;
         if (!previewCanvas) return;
-        previewCanvas.width  = cW * 2;
+        previewCanvas.width = cW * 2;
         previewCanvas.height = cH;
 
         // Buat offscreen persisten
         if (!offscreenRef.current) offscreenRef.current = document.createElement("canvas");
-        offscreenRef.current.width  = cW;
+        offscreenRef.current.width = cW;
         offscreenRef.current.height = cH;
         const offCtx = offscreenRef.current.getContext("2d");
 
@@ -799,7 +797,7 @@ export default function PhotoBooth() {
             })
         ));
 
-        const mainCtx   = previewCanvas.getContext("2d");
+        const mainCtx = previewCanvas.getContext("2d");
         const photosSnap = photos.slice();
 
         const photoOnlyElements = videoElements.map(item => ({ video: null, slotIndex: item.slotIndex }));
@@ -807,7 +805,7 @@ export default function PhotoBooth() {
         // Capture freeze frame awal (berupa foto)
         drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         const freezeStartData = offCtx.getImageData(0, 0, cW, cH);
-        
+
         // Capture freeze frame akhir (berupa foto)
         drawOneStrip(offCtx, photoOnlyElements, cW, cH, frameImg, photosSnap, frameLayout, PREVIEW_SCALE);
         let freezeEndData = offCtx.getImageData(0, 0, cW, cH);
@@ -831,10 +829,10 @@ export default function PhotoBooth() {
         };
 
         // Timing — freeze 1s → video 5s → freeze 1s = 7s total
-        const T_FREEZE_IN  = 1000;
-        const T_VIDEO      = 5000;
+        const T_FREEZE_IN = 1000;
+        const T_VIDEO = 5000;
         const T_FREEZE_OUT = 1000;
-        const TOTAL        = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT;
+        const TOTAL = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT;
         let currentPhase = 0; // 0: freeze1, 1: play, 2: freeze2
         const startTime = performance.now();
 
@@ -856,10 +854,10 @@ export default function PhotoBooth() {
                 if (nextPhase === 0) {
                     videoElements.forEach((v) => {
                         v.video.pause();
-                        v.video.currentTime = 0; 
+                        v.video.currentTime = 0;
                     });
                 } else if (nextPhase === 1) {
-                    videoElements.forEach((v) => v.video.play().catch(() => {}));
+                    videoElements.forEach((v) => v.video.play().catch(() => { }));
                 } else if (nextPhase === 2) {
                     videoElements.forEach((v) => v.video.pause());
                 }
@@ -964,10 +962,10 @@ export default function PhotoBooth() {
                 };
 
                 // Timing — freeze 1s → video 5s → freeze 1s = 7s total
-                const T_FREEZE_IN  = 1000;
-                const T_VIDEO      = 5000;
+                const T_FREEZE_IN = 1000;
+                const T_VIDEO = 5000;
                 const T_FREEZE_OUT = 1000;
-                const TOTAL        = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT;
+                const TOTAL = T_FREEZE_IN + T_VIDEO + T_FREEZE_OUT;
 
                 const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
                 const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
@@ -1016,7 +1014,7 @@ export default function PhotoBooth() {
 
                     if (nextPhase !== currentPhase) {
                         if (nextPhase === 1) {
-                            videoElements.forEach((v) => v.video.play().catch(() => {}));
+                            videoElements.forEach((v) => v.video.play().catch(() => { }));
                         } else if (nextPhase === 2) {
                             videoElements.forEach((v) => v.video.pause());
                         }
@@ -1050,23 +1048,23 @@ export default function PhotoBooth() {
     const createCombinedPhotoBlob = () => {
         const src = canvasRef.current;
         if (!src) return Promise.resolve(null);
-        
+
         const combined = document.createElement("canvas");
-        combined.width  = FRAME_W * 2;
+        combined.width = FRAME_W * 2;
         combined.height = FRAME_H;
-        
+
         const ctx = combined.getContext("2d");
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, combined.width, combined.height);
-        
+
         ctx.drawImage(src, 0, 0);
         ctx.drawImage(src, FRAME_W, 0);
-        
+
         // Draw Stickers over the combined layout!
         stickersRef.current.forEach((s) => {
             ctx.drawImage(s.img, s.x, s.y, s.w, s.h);
         });
-        
+
         drawCuttingGuide(ctx, combined.width, combined.height);
         return new Promise((r) => combined.toBlob(r, "image/jpeg", 0.95));
     };
@@ -1086,7 +1084,7 @@ export default function PhotoBooth() {
                 { method: "POST", body: blob, headers: { "Content-Type": "application/octet-stream" } }
             );
             if (resp.ok) return;
-        } catch (_) {}
+        } catch (_) { }
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url; a.download = filename; a.click();
@@ -1097,14 +1095,14 @@ export default function PhotoBooth() {
     const handleFinalSave = async () => {
         if (isSaving || showSuccessPopup) return;
         setIsSaving(true); setSaveProgress(0);
-        const safeName  = sanitizeFilename(userName);
+        const safeName = sanitizeFilename(userName);
         const safePhone = normalizePhone(userPhone).replace(/\+/g, "");
-        const fileBase  = safeName && safePhone ? `${safeName}${safePhone}` : `photo-${Date.now()}`;
+        const fileBase = safeName && safePhone ? `${safeName}${safePhone}` : `photo-${Date.now()}`;
         setSaveProgress(10);
         const photoBlob = await createCombinedPhotoBlob();
         if (photoBlob) await saveFile(`${fileBase}.jpg`, photoBlob);
         setSaveProgress(35);
-        
+
         const keychainBlob = await createCombinedKeychainBlob();
         if (keychainBlob) await saveFile(`${fileBase}-keychain.jpg`, keychainBlob);
         setSaveProgress(60);
@@ -1129,266 +1127,287 @@ export default function PhotoBooth() {
 
     const showRetakeButton = selectedPhotoIndex !== null && photos[selectedPhotoIndex];
 
+    // ─── Background helper ─────────────────────────────────────────────────────
+    const getBackgroundStyle = () => {
+        let bgUrl = BG_WELCOME;
+        if (selectedFrame && selectedKeychain && mode === "decorate") bgUrl = BG_DECORATE;
+        else if (selectedFrame && selectedKeychain && mode === "photo") bgUrl = BG_SMILE;
+        return {
+            backgroundImage: `url(${bgUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+        };
+    };
+
     // ─── RENDER ───────────────────────────────────────────────────────────────
     return (
-        <div style={S.centerCol}>
-            {/* TOP BAR */}
-            <div style={S.topBar}>
-                {selectedFrame && (
-                    <button style={{ ...S.button, position: "absolute", left: 0, top: 14, height: 50, padding: "0 22px" }} onClick={handleBack}>
-                        ← Back
-                    </button>
-                )}
-                {sessionStarted && <div style={S.timerBadge}>{formatTime(sessionTimeLeft)}</div>}
-                <h1 style={S.titleBar}>
-                    {(!selectedFrame || !selectedKeychain) ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"
-                        : mode === "photo" ? "⋆｡‧˚ʚ Smile :)ɞ˚‧｡⋆"
-                        : ". ݁₊ ⊹ . ݁Let's decorate . ⊹ ₊ ݁."}
-                </h1>
-            </div>
+        <div style={{ ...getBackgroundStyle(), position: "fixed", inset: 0, overflowY: "auto", overflowX: "hidden", zIndex: 0 }}>
+            <div style={{ ...S.centerCol, minHeight: "100vh", width: "100%", padding: "20px 0" }}>
+                {/* TOP BAR */}
+                <div style={S.topBar}>
+                    {selectedFrame && (
+                        <button style={{ ...S.button, position: "absolute", left: 0, top: 14, height: 50, padding: "0 22px" }} onClick={handleBack}>
+                            ← Back
+                        </button>
+                    )}
+                    {sessionStarted && <div style={S.timerBadge}>{formatTime(sessionTimeLeft)}</div>}
+                    <h1 style={S.titleBar}>
+                        {(!selectedFrame || !selectedKeychain) ? "₊✩‧₊˚ Welcome ౨ৎ ˚₊✩‧₊"
+                            : mode === "photo" ? "⋆｡‧˚ʚ Smile :)ɞ˚‧｡⋆"
+                                : ". ݁₊ ⊹ . ݁Let's decorate . ⊹ ₊ ݁."}
+                    </h1>
+                </div>
 
-            {/* MAIN */}
-            <div style={S.mainContent}>
-                {!selectedFrame ? (
-                    !sessionStarted ? (
+                {/* MAIN */}
+                <div style={S.mainContent}>
+                    {!selectedFrame ? (
+                        !sessionStarted ? (
+                            <div style={S.col}>
+                                <button style={{ ...S.button, fontSize: 44, padding: "20px 60px" }} onClick={handleStartSession}>Start</button>
+                            </div>
+                        ) : (
+                            <div style={S.col}>
+                                <div style={{ fontSize: 52, color: "#8c5b4a", fontWeight: "bold" }}>Pilih frame kamu</div>
+                                <div className="horizontal-scroll-container" style={S.horizontalScroll}>
+                                    {FRAME_OPTIONS.filter(src => !failedFrames.has(src)).map((src) => (
+                                        <img key={src} src={src} alt="frame"
+                                            onClick={() => { setSelectedFrame(src); }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                                            onError={() => setFailedFrames(prev => new Set([...prev, src]))}
+                                            style={{ ...S.frameThumb, transform: selectedFrame === src ? "scale(1.08)" : "scale(1)", flexShrink: 0 }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )
+                    ) : !selectedKeychain ? (
                         <div style={S.col}>
-                            <button style={{ ...S.button, fontSize: 44, padding: "20px 60px" }} onClick={handleStartSession}>Start</button>
-                        </div>
-                    ) : (
-                        <div style={S.col}>
-                            <div style={{ fontSize: 52, color: "#8c5b4a", fontWeight: "bold" }}>Pilih frame kamu</div>
-                            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "center" }}>
-                                {FRAME_OPTIONS.map((src) => (
-                                    <img key={src} src={src} alt="frame"
-                                        onClick={() => { setSelectedFrame(src); }}
+                            <div style={{ fontSize: 52, color: "#8c5b4a", fontWeight: "bold" }}>Pilih keychain frame kamu</div>
+                            <div className="horizontal-scroll-container" style={S.horizontalScroll}>
+                                {KEYCHAIN_OPTIONS.filter(src => !failedKeychains.has(src)).map((src) => (
+                                    <img key={src} src={src} alt="keychain frame"
+                                        onClick={() => { setSelectedKeychain(src); setCanTakePhoto(true); }}
                                         onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
                                         onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                                        style={{ ...S.frameThumb, transform: selectedFrame === src ? "scale(1.08)" : "scale(1)" }}
+                                        onError={() => setFailedKeychains(prev => new Set([...prev, src]))}
+                                        style={{ ...S.frameThumb, transform: selectedKeychain === src ? "scale(1.08)" : "scale(1)", flexShrink: 0 }}
                                     />
                                 ))}
                             </div>
                         </div>
-                    )
-                ) : !selectedKeychain ? (
-                    <div style={S.col}>
-                        <div style={{ fontSize: 52, color: "#8c5b4a", fontWeight: "bold" }}>Pilih keychain frame kamu</div>
-                        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "center" }}>
-                            {KEYCHAIN_OPTIONS.map((src) => (
-                                <img key={src} src={src} alt="keychain frame"
-                                    onClick={() => { setSelectedKeychain(src); setCanTakePhoto(true); }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                                    style={{ ...S.frameThumb, transform: selectedKeychain === src ? "scale(1.08)" : "scale(1)" }}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                ) : (
-                    <div style={{ display: "flex", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
-                        {/* LEFT: webcam */}
-                        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            {(mode === "photo" || showRetakeCamera) && (
-                                <>
-                                    <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                                        <div style={{ position: "relative", width: 1400, maxWidth: "100%" }}>
-                                            <Webcam
-                                                audio={false} ref={webcamRef}
-                                                screenshotFormat="image/jpeg"
-                                                videoConstraints={frameLayout ? { width: frameLayout.w, height: frameLayout.slots[0].h, facingMode: "user" } : { width: 953, height: 555, facingMode: "user" }}
-                                                mirrored={true}
-                                                style={{ width: "100%", borderRadius: 18, objectFit: "cover", aspectRatio: frameLayout ? `${frameLayout.w}/${frameLayout.slots[0].h}` : `953/555` }}
-                                            />
-                                            {countdown != null && <div style={S.countdownOverlay}>{countdown}</div>}
+                    ) : (
+                        <div style={{ display: "flex", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
+                            {/* LEFT: webcam */}
+                            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                {(mode === "photo" || showRetakeCamera) && (
+                                    <>
+                                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                                            <div style={{ position: "relative", width: 1400, maxWidth: "100%" }}>
+                                                <Webcam
+                                                    audio={false} ref={webcamRef}
+                                                    screenshotFormat="image/jpeg"
+                                                    videoConstraints={frameLayout ? { width: frameLayout.w, height: frameLayout.slots[0].h, facingMode: "user" } : { width: 953, height: 555, facingMode: "user" }}
+                                                    mirrored={true}
+                                                    style={{ width: "100%", borderRadius: 18, objectFit: "cover", aspectRatio: frameLayout ? `${frameLayout.w}/${frameLayout.slots[0].h}` : `953/555` }}
+                                                />
+                                                {countdown != null && <div style={S.countdownOverlay}>{countdown}</div>}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div style={{ marginTop: 20, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
-                                        {canTakePhoto && sessionStarted && (
-                                            <button style={S.button} onClick={capturePhoto}>
-                                                {showRetakeCamera ? "📷 Ambil Foto" : "Take Photo"}
-                                            </button>
-                                        )}
-                                        {photoCount > 0 && mode === "photo" && (
-                                            <button style={{ ...S.button, fontSize: 24, padding: "8px 16px" }} onClick={redoLastPhoto}>⟳</button>
-                                        )}
-                                        {showRetakeButton && mode === "photo" && (
-                                            <button style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>Retake selected</button>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-                            {mode === "decorate" && !showRetakeCamera && (
-                                <div style={S.col}>
-                                    {activeStampSrc ? (
-                                        <div style={{ textAlign: "center", marginBottom: 30, background: "#fff0f4", padding: 20, borderRadius: 20, boxShadow: "0 10px 30px rgba(255,122,162,0.2)" }}>
-                                            <h3 style={{ margin: "0 0 10px 0", color: "#ff7aa2", fontSize: 24 }}>👆 Tap foto untuk menempel</h3>
-                                            <img src={activeStampSrc} alt="Active Stamp" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 16 }} />
-                                            <br />
-                                            <button 
-                                                style={{ ...S.button, fontSize: 20, padding: "10px 24px" }} 
-                                                onClick={() => setActiveStampSrc(null)}
-                                            >
-                                                Selesai Menempel
-                                            </button>
+                                        <div style={{ marginTop: 20, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+                                            {canTakePhoto && sessionStarted && (
+                                                <button style={S.button} onClick={capturePhoto}>
+                                                    {showRetakeCamera ? "📷 Ambil Foto" : "Take Photo"}
+                                                </button>
+                                            )}
+                                            {photoCount > 0 && mode === "photo" && (
+                                                <button style={{ ...S.button, fontSize: 24, padding: "8px 16px" }} onClick={redoLastPhoto}>⟳</button>
+                                            )}
+                                            {showRetakeButton && mode === "photo" && (
+                                                <button style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>Retake selected</button>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <div style={{ textAlign: "center", marginBottom: 30 }}>
-                                            <button 
-                                                style={{ ...S.button, background: "#ff7aa2", color: "white", borderColor: "#ff7aa2", fontSize: 28, padding: "16px 32px", boxShadow: "0 10px 20px rgba(255,122,162,0.3)" }} 
-                                                onClick={() => { setSelectedStickerIndex(null); setShowStickerModal(true); }}
-                                            >
-                                                ✨ Tambahkan Stiker
-                                            </button>
-                                        </div>
-                                    )}
+                                    </>
+                                )}
+                                {mode === "decorate" && !showRetakeCamera && (
+                                    <div style={S.col}>
+                                        {activeStampSrc ? (
+                                            <div style={{ textAlign: "center", marginBottom: 30, background: "#fff0f4", padding: 20, borderRadius: 20, boxShadow: "0 10px 30px rgba(255,122,162,0.2)" }}>
+                                                <h3 style={{ margin: "0 0 10px 0", color: "#ff7aa2", fontSize: 24 }}>👆 Tap foto untuk menempel</h3>
+                                                <img src={activeStampSrc} alt="Active Stamp" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 16 }} />
+                                                <br />
+                                                <button
+                                                    style={{ ...S.button, fontSize: 20, padding: "10px 24px" }}
+                                                    onClick={() => setActiveStampSrc(null)}
+                                                >
+                                                    Selesai Menempel
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div style={{ textAlign: "center", marginBottom: 30 }}>
+                                                <button
+                                                    style={{ ...S.button, background: "#ff7aa2", color: "white", borderColor: "#ff7aa2", fontSize: 28, padding: "16px 32px", boxShadow: "0 10px 20px rgba(255,122,162,0.3)" }}
+                                                    onClick={() => { setSelectedStickerIndex(null); setShowStickerModal(true); }}
+                                                >
+                                                    ✨ Tambahkan Stiker
+                                                </button>
+                                            </div>
+                                        )}
 
-                                    {!activeStampSrc && selectedStickerIndex !== null ? (
-                                        <div style={{ textAlign: "center", marginTop: 10 }}>
-                                            <div style={{ fontSize: 18, color: "#8c5b4a", marginBottom: 8 }}>Stiker terpilih</div>
-                                            <button style={{ ...S.button, background: "#ff6b6b", color: "white", borderColor: "#ff6b6b", fontSize: 20, padding: "10px 20px" }} onClick={deleteSelectedSticker}>🗑️ Hapus Stiker</button>
-                                        </div>
-                                    ) : showRetakeButton ? (
-                                        <div style={{ textAlign: "center" }}>
-                                            <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12 }}>Foto dipilih — mau diganti?</div>
-                                            <button style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>📷 Retake foto ini</button>
-                                        </div>
-                                    ) : (
-                                        <div style={{ fontSize: 18, color: "#b08a80", textAlign: "center", maxWidth: 320 }}>
-                                            💡 Klik foto atau stiker di strip untuk memilih/geser
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* RIGHT: preview strip */}
-                        <div style={{ display: "flex", flexDirection: "row", gap: 20, alignItems: "flex-start", flexShrink: 0 }}>
-                            {/* Foto strip — aspect ratio 1200:3000 = 2:5 */}
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                <div style={S.previewLabel}>📸 Foto</div>
-                                <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
-                                    <canvas ref={canvasRef}
-                                        style={{ width: 320, height: 954, display: mode === "decorate" ? "none" : "block", cursor: "default" }}
-                                        onMouseDown={mode === "photo" ? handleMouseDown : undefined} 
-                                        onMouseMove={mode === "photo" ? handleMouseMove : undefined} 
-                                        onMouseUp={mode === "photo" ? handleMouseUp : undefined}
-                                    />
-                                    {mode === "decorate" && (
-                                        <canvas ref={decorateCanvasRef} 
-                                            style={{ width: 640, height: 954, display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
-                                            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
-                                        />
-                                    )}
-                                </div>
+                                        {!activeStampSrc && selectedStickerIndex !== null ? (
+                                            <div style={{ textAlign: "center", marginTop: 10 }}>
+                                                <div style={{ fontSize: 18, color: "#8c5b4a", marginBottom: 8 }}>Stiker terpilih</div>
+                                                <button style={{ ...S.button, background: "#ff6b6b", color: "white", borderColor: "#ff6b6b", fontSize: 20, padding: "10px 20px" }} onClick={deleteSelectedSticker}>🗑️ Hapus Stiker</button>
+                                            </div>
+                                        ) : showRetakeButton ? (
+                                            <div style={{ textAlign: "center" }}>
+                                                <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12 }}>Foto dipilih — mau diganti?</div>
+                                                <button style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>📷 Retake foto ini</button>
+                                            </div>
+                                        ) : (
+                                            <div style={{ fontSize: 18, color: "#b08a80", textAlign: "center", maxWidth: 320 }}>
+                                                💡 Klik foto atau stiker di strip untuk memilih/geser
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Video preview */}
-                            {allPhotosTaken && (
+                            {/* RIGHT: preview strip */}
+                            <div style={{ display: "flex", flexDirection: "row", gap: 20, alignItems: "flex-start", flexShrink: 0 }}>
+                                {/* Foto strip — aspect ratio 1200:3000 = 2:5 */}
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                    <div style={S.previewLabel}>🎬 Video</div>
-                                    <div style={{ width: 640, height: 954, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                        <canvas ref={videoPreviewCanvasRef} style={{ width: 640, height: 954, display: "block" }} />
+                                    <div style={S.previewLabel}>📸 Foto</div>
+                                    <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
+                                        <canvas ref={canvasRef}
+                                            style={{ width: 320, height: 954, display: mode === "decorate" ? "none" : "block", cursor: "default" }}
+                                            onMouseDown={mode === "photo" ? handleMouseDown : undefined}
+                                            onMouseMove={mode === "photo" ? handleMouseMove : undefined}
+                                            onMouseUp={mode === "photo" ? handleMouseUp : undefined}
+                                        />
+                                        {mode === "decorate" && (
+                                            <canvas ref={decorateCanvasRef}
+                                                style={{ width: 640, height: 954, display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
+                                                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
+                                            />
+                                        )}
                                     </div>
                                 </div>
-                            )}
 
-                            {/* Keychain preview */}
-                            {allPhotosTaken && (
-                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                    <div style={S.previewLabel}>🔑 Keychain</div>
-                                    <div style={{ width: 440, height: 476, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                        <canvas ref={keychainCanvasRef} style={{ width: 440, height: 476, display: "block" }} />
+                                {/* Video preview */}
+                                {allPhotosTaken && (
+                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                        <div style={S.previewLabel}>🎬 Video</div>
+                                        <div style={{ width: 640, height: 954, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                            <canvas ref={videoPreviewCanvasRef} style={{ width: 640, height: 954, display: "block" }} />
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
 
-                            {/* Finish */}
-                            {mode === "decorate" && allPhotosTaken && (
-                                <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-                                    <button style={{ ...S.button, fontSize: 30, padding: "16px 34px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
-                                        onClick={handleFinalSave} disabled={isSaving}>
-                                        {isSaving ? "⏳ Saving..." : "✅ Finish"}
-                                    </button>
-                                </div>
+                                {/* Keychain preview */}
+                                {allPhotosTaken && (
+                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                        <div style={S.previewLabel}>🔑 Keychain</div>
+                                        <div style={{ width: 440, height: 476, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                            <canvas ref={keychainCanvasRef} style={{ width: 440, height: 476, display: "block" }} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Finish */}
+                                {mode === "decorate" && allPhotosTaken && (
+                                    <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
+                                        <button style={{ ...S.button, fontSize: 30, padding: "16px 34px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
+                                            onClick={handleFinalSave} disabled={isSaving}>
+                                            {isSaving ? "⏳ Saving..." : "✅ Finish"}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* MODAL: Sticker Selection */}
+                {showStickerModal && (
+                    <div style={S.modalOverlay} onClick={() => setShowStickerModal(false)}>
+                        <div style={{ ...S.modalBox, padding: "40px", maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+                            <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 32 }}>Pilih Stiker</h2>
+                            <div className="sticker-scroll-container" style={{ display: "flex", gap: 20, overflowX: "auto", flexWrap: "nowrap", marginBottom: 30, padding: "10px 0", maxWidth: "100%" }}>
+                                {STICKER_OPTIONS.filter(src => !failedStickers.has(src)).map((src, i) => (
+                                    <img key={i} src={src} alt="Sticker"
+                                        style={{ width: 120, height: 120, objectFit: "contain", cursor: "pointer", background: "#fff0f4", borderRadius: 16, padding: 12, boxShadow: "0 6px 16px rgba(255,122,162,0.2)", transition: "transform 0.2s", flexShrink: 0 }}
+                                        onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
+                                        onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+                                        onError={() => setFailedStickers(prev => new Set([...prev, src]))}
+                                        onClick={() => {
+                                            setActiveStampSrc(src);
+                                            setShowStickerModal(false);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                            <button style={{ ...S.button, fontSize: 20, padding: "10px 30px" }} onClick={() => setShowStickerModal(false)}>
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL: Input data */}
+                {showNameInput && (
+                    <div style={S.modalOverlay}>
+                        <div style={S.modalBox}>
+                            <h2 style={{ margin: "0 0 28px", color: "#8c5b4a", fontSize: 40 }}>Data Peserta</h2>
+                            <label style={S.inputLabel}>Nama</label>
+                            <input type="text" placeholder="Nama lengkap..."
+                                value={userName}
+                                onChange={(e) => { setUserName(e.target.value); setNameError(""); }}
+                                onKeyPress={(e) => { if (e.key === "Enter") document.getElementById("ph")?.focus(); }}
+                                style={{ ...S.input, borderColor: nameError ? "#ff6b6b" : "#ff7aa2", marginBottom: nameError ? 6 : 20 }}
+                                autoFocus
+                            />
+                            {nameError && <div style={S.errorText}>{nameError}</div>}
+                            <label style={S.inputLabel}>Nomor Telepon</label>
+                            <input id="ph" type="tel" placeholder="08123456789 atau +62812..."
+                                autoComplete="off"
+                                value={userPhone}
+                                onChange={(e) => { setUserPhone(e.target.value); setPhoneError(""); }}
+                                onKeyPress={(e) => { if (e.key === "Enter") handleNameSubmit(); }}
+                                style={{ ...S.input, borderColor: phoneError ? "#ff6b6b" : "#ff7aa2", marginBottom: phoneError ? 6 : 24 }}
+                            />
+                            {phoneError && <div style={S.errorText}>{phoneError}</div>}
+                            <button style={{ ...S.button, fontSize: 28, padding: "16px 40px", width: "100%" }} onClick={handleNameSubmit}>
+                                OK — Mulai Sesi
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL: Saving / Success */}
+                {(isSaving || showSuccessPopup) && (
+                    <div style={S.modalOverlay}>
+                        <div style={{ ...S.modalBox, padding: "50px 80px" }}>
+                            <div style={{ fontSize: 72, marginBottom: 20 }}>{isSaving ? "⏳" : "✅"}</div>
+                            <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 42, fontFamily: "CustomFont" }}>
+                                {isSaving ? "Mohon tunggu..." : "Berhasil disimpan!"}
+                            </h2>
+                            {isSaving && (
+                                <>
+                                    <div style={S.progressBarWrap}>
+                                        <div style={{ ...S.progressBarFill, width: `${saveProgress}%` }} />
+                                    </div>
+                                    <div style={{ fontSize: 20, color: "#b08a80", marginTop: 10 }}>{saveProgress}%</div>
+                                </>
                             )}
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* MODAL: Sticker Selection */}
-            {showStickerModal && (
-                <div style={S.modalOverlay} onClick={() => setShowStickerModal(false)}>
-                    <div style={{ ...S.modalBox, padding: "40px", maxWidth: 600 }} onClick={e => e.stopPropagation()}>
-                        <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 32 }}>Pilih Stiker</h2>
-                        <div style={{ display: "flex", gap: 20, justifyContent: "center", flexWrap: "wrap", marginBottom: 30 }}>
-                            {STICKER_OPTIONS.map((src, i) => (
-                                <img key={i} src={src} alt="Sticker" 
-                                    style={{ width: 120, height: 120, objectFit: "contain", cursor: "pointer", background: "#fff0f4", borderRadius: 16, padding: 12, boxShadow: "0 6px 16px rgba(255,122,162,0.2)", transition: "transform 0.2s" }} 
-                                    onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
-                                    onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
-                                    onClick={() => {
-                                        setActiveStampSrc(src);
-                                        setShowStickerModal(false);
-                                    }} 
-                                />
-                            ))}
-                        </div>
-                        <button style={{ ...S.button, fontSize: 20, padding: "10px 30px" }} onClick={() => setShowStickerModal(false)}>
-                            Tutup
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* MODAL: Input data */}
-            {showNameInput && (
-                <div style={S.modalOverlay}>
-                    <div style={S.modalBox}>
-                        <h2 style={{ margin: "0 0 28px", color: "#8c5b4a", fontSize: 40 }}>Data Peserta</h2>
-                        <label style={S.inputLabel}>Nama</label>
-                        <input type="text" placeholder="Nama lengkap..."
-                            value={userName}
-                            onChange={(e) => { setUserName(e.target.value); setNameError(""); }}
-                            onKeyPress={(e) => { if (e.key === "Enter") document.getElementById("ph")?.focus(); }}
-                            style={{ ...S.input, borderColor: nameError ? "#ff6b6b" : "#ff7aa2", marginBottom: nameError ? 6 : 20 }}
-                            autoFocus
-                        />
-                        {nameError && <div style={S.errorText}>{nameError}</div>}
-                        <label style={S.inputLabel}>Nomor Telepon</label>
-                        <input id="ph" type="tel" placeholder="08123456789 atau +62812..."
-                            autoComplete="off"
-                            value={userPhone}
-                            onChange={(e) => { setUserPhone(e.target.value); setPhoneError(""); }}
-                            onKeyPress={(e) => { if (e.key === "Enter") handleNameSubmit(); }}
-                            style={{ ...S.input, borderColor: phoneError ? "#ff6b6b" : "#ff7aa2", marginBottom: phoneError ? 6 : 24 }}
-                        />
-                        {phoneError && <div style={S.errorText}>{phoneError}</div>}
-                        <button style={{ ...S.button, fontSize: 28, padding: "16px 40px", width: "100%" }} onClick={handleNameSubmit}>
-                            OK — Mulai Sesi
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* MODAL: Saving / Success */}
-            {(isSaving || showSuccessPopup) && (
-                <div style={S.modalOverlay}>
-                    <div style={{ ...S.modalBox, padding: "50px 80px" }}>
-                        <div style={{ fontSize: 72, marginBottom: 20 }}>{isSaving ? "⏳" : "✅"}</div>
-                        <h2 style={{ margin: "0 0 20px", color: "#8c5b4a", fontSize: 42, fontFamily: "CustomFont" }}>
-                            {isSaving ? "Mohon tunggu..." : "Berhasil disimpan!"}
-                        </h2>
-                        {isSaving && (
-                            <>
-                                <div style={S.progressBarWrap}>
-                                    <div style={{ ...S.progressBarFill, width: `${saveProgress}%` }} />
-                                </div>
-                                <div style={{ fontSize: 20, color: "#b08a80", marginTop: 10 }}>{saveProgress}%</div>
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* Watermark */}
+            <div style={S.watermark}>Antonny</div>
         </div>
     );
 }
@@ -1422,6 +1441,11 @@ const S = {
         boxShadow: "0 8px 8px rgba(0,0,0,0.15)",
         transition: "transform 0.25s ease",
     },
+    horizontalScroll: {
+        display: "flex", gap: 24, flexWrap: "nowrap", overflowX: "auto",
+        padding: "16px 8px", maxWidth: "90vw", scrollBehavior: "smooth",
+        WebkitOverflowScrolling: "touch",
+    },
     mainContent: {
         width: "min(1600px, 98vw)", display: "flex",
         justifyContent: "center", alignItems: "flex-start", minHeight: 700,
@@ -1454,4 +1478,10 @@ const S = {
     errorText: { color: "#ff6b6b", fontSize: 16, marginBottom: 16, fontWeight: "bold", textAlign: "left" },
     progressBarWrap: { width: "100%", height: 16, background: "#ffe0ea", borderRadius: 999, overflow: "hidden", marginTop: 10 },
     progressBarFill: { height: "100%", background: "linear-gradient(90deg,#ff7aa2,#ffb3c6)", borderRadius: 999, transition: "width 0.4s ease" },
+    watermark: {
+        position: "fixed", bottom: 16, left: 20, zIndex: 10,
+        fontSize: 100, fontFamily: "CustomFont, cursive",
+        color: "rgba(140, 91, 74, 0.35)", letterSpacing: 1,
+        pointerEvents: "none", userSelect: "none",
+    },
 };

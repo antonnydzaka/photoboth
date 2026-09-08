@@ -1,13 +1,65 @@
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
   font-family: "CustomFont", cursive, sans-serif;
   color: #8c5b4a;
   background-color: #ffffff;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─── Transparent scrollbar for horizontal scroll areas ─── */
+.horizontal-scroll-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 91, 74, 0.25) transparent;
+}
+
+.horizontal-scroll-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.horizontal-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+  margin: 0 20px;
+}
+
+.horizontal-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 122, 162, 0.3);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.3s ease;
+}
+
+.horizontal-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 122, 162, 0.55);
+}
+
+/* Sticker modal scrollbar */
+.sticker-scroll-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 91, 74, 0.2) transparent;
+}
+
+.sticker-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sticker-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.sticker-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 122, 162, 0.25);
+  border-radius: 999px;
+}
+
+.sticker-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 122, 162, 0.5);
 }
