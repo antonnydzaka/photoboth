@@ -2,11 +2,12 @@ import './App.css';
 import React from "react";
 import Photobooth from "./components/Photobooth";
 import "./styles/global.css"
-const logoSrc = "/assets/logo/jiggleduo-logo.png";
-
+import ErrorBoundary from "./components/ErrorBoundary";
 function App() {
   return (
-    <Photobooth />
+    <ErrorBoundary>
+      <Photobooth />
+    </ErrorBoundary>
   );
 }
 
