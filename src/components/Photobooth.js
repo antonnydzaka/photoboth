@@ -565,8 +565,8 @@ export default function PhotoBooth() {
                 return prev;
             }
             const next = [...filtered, newPhoto];
-            if (next.length === frameLayout.slots.length) { 
-                setMode("decorate"); setAllPhotosTaken(true); setShowRetakeCamera(false); 
+            if (next.length === frameLayout.slots.length) {
+                setMode("decorate"); setAllPhotosTaken(true); setShowRetakeCamera(false);
                 logger.info('All photos taken');
             }
             return next;
@@ -1234,7 +1234,7 @@ export default function PhotoBooth() {
             <div style={{ ...S.centerCol, minHeight: "100vh", width: "100%", justifyContent: "center", padding: "20px 0", position: "relative", zIndex: 1 }}>
                 {/* TOP BAR */}
                 <div style={S.topBar}>
-                    {selectedFrame && (
+                    {selectedFrame && !sessionStarted && (
                         <button className="pb-btn" style={{ ...S.button, position: "absolute", left: 0, top: 14, height: 50, padding: "0 22px" }} onClick={handleBack}>
                             ← Back
                         </button>
@@ -1295,13 +1295,13 @@ export default function PhotoBooth() {
                                     <>
                                         {frameLayout && frameLayout.slots && frameLayout.slots.length > 0 ? (
                                             <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                                                <div style={{ position: "relative", width: 1400, maxWidth: "100%" }}>
+                                                <div style={{ position: "relative", height: "65vh", maxWidth: "100%", aspectRatio: `${frameLayout.w}/${frameLayout.slots[0].h}` }}>
                                                     <Webcam
                                                         audio={false} ref={webcamRef}
                                                         screenshotFormat="image/jpeg"
                                                         videoConstraints={{ width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" }}
                                                         mirrored={true}
-                                                        style={{ width: "100%", borderRadius: 18, objectFit: "cover", aspectRatio: `${frameLayout.w}/${frameLayout.slots[0].h}` }}
+                                                        style={{ width: "100%", height: "100%", borderRadius: 18, objectFit: "cover" }}
                                                     />
                                                     {countdown != null && <div style={S.countdownOverlay}>{countdown}</div>}
                                                 </div>
@@ -1382,14 +1382,14 @@ export default function PhotoBooth() {
                                     <div style={S.previewLabel}>Foto</div>
                                     <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
                                         <canvas ref={canvasRef}
-                                            style={{ width: 320, height: 954, display: mode === "decorate" ? "none" : "block", cursor: "default" }}
+                                            style={{ height: "65vh", width: "auto", display: mode === "decorate" ? "none" : "block", cursor: "default" }}
                                             onMouseDown={mode === "photo" ? handleMouseDown : undefined}
                                             onMouseMove={mode === "photo" ? handleMouseMove : undefined}
                                             onMouseUp={mode === "photo" ? handleMouseUp : undefined}
                                         />
                                         {mode === "decorate" && (
                                             <canvas ref={decorateCanvasRef}
-                                                style={{ width: 640, height: 954, display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
+                                                style={{ height: "65vh", width: "auto", display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
                                                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
                                             />
                                         )}
@@ -1400,8 +1400,8 @@ export default function PhotoBooth() {
                                 {allPhotosTaken && (
                                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                         <div style={S.previewLabel}>Video</div>
-                                        <div style={{ width: 640, height: 954, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                            <canvas ref={videoPreviewCanvasRef} style={{ width: 640, height: 954, display: "block" }} />
+                                        <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                            <canvas ref={videoPreviewCanvasRef} style={{ height: "100%", width: "auto", display: "block" }} />
                                         </div>
                                     </div>
                                 )}
@@ -1410,8 +1410,8 @@ export default function PhotoBooth() {
                                 {allPhotosTaken && (
                                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                         <div style={S.previewLabel}>Keychain</div>
-                                        <div style={{ width: 440, height: 476, borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                            <canvas ref={keychainCanvasRef} style={{ width: 440, height: 476, display: "block" }} />
+                                        <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                            <canvas ref={keychainCanvasRef} style={{ height: "100%", width: "auto", display: "block" }} />
                                         </div>
                                     </div>
                                 )}
