@@ -1249,29 +1249,31 @@ export default function PhotoBooth() {
 
                 {/* MAIN */}
                 <div style={S.mainContent}>
-                    {!selectedFrame ? (
-                        !sessionStarted ? (
-                            <div className="fade-in-up" style={S.col}>
-                                <button className="pb-btn" style={{ ...S.button, fontSize: 64, padding: "30px 100px", borderRadius: 999, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", boxShadow: "0 16px 50px rgba(255,122,162,0.35)", fontWeight: "bold" }} onClick={handleStartSession}>Start</button>
+                    {!selectedFrame && !sessionStarted && (
+                        <div className="fade-in-up" style={S.col}>
+                            <button className="pb-btn" style={{ ...S.button, fontSize: 64, padding: "30px 100px", borderRadius: 999, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", boxShadow: "0 16px 50px rgba(255,122,162,0.35)", fontWeight: "bold" }} onClick={handleStartSession}>Start</button>
+                        </div>
+                    )}
+
+                    {!selectedFrame && sessionStarted && (
+                        <div className="fade-in-up" style={S.col}>
+                            <div style={{ fontSize: 46, color: "#8c5b4a", fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "10px 40px", borderRadius: 999, backdropFilter: "blur(10px)", boxShadow: "0 8px 24px rgba(0,0,0,0.1)" }}>Pilih frame kamu</div>
+                            <div className="frame-carousel" style={{ width: "min(1400px, 92vw)" }}>
+                                {FRAME_OPTIONS.filter(src => !failedFrames.has(src)).map((src) => (
+                                    <div
+                                        key={src}
+                                        className={`frame-carousel-item${selectedFrame === src ? " active" : ""}`}
+                                        onClick={() => { setSelectedFrame(src); }}
+                                    >
+                                        <img src={src} alt="frame" onError={() => setFailedFrames(prev => new Set([...prev, src]))} />
+                                    </div>
+                                ))}
                             </div>
-                        ) : (
-                            <div className="fade-in-up" style={S.col}>
-                                <div style={{ fontSize: 46, color: "#8c5b4a", fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "10px 40px", borderRadius: 999, backdropFilter: "blur(10px)", boxShadow: "0 8px 24px rgba(0,0,0,0.1)" }}>Pilih frame kamu</div>
-                                <div className="frame-carousel" style={{ width: "min(1400px, 92vw)" }}>
-                                    {FRAME_OPTIONS.filter(src => !failedFrames.has(src)).map((src) => (
-                                        <div
-                                            key={src}
-                                            className={`frame-carousel-item${selectedFrame === src ? " active" : ""}`}
-                                            onClick={() => { setSelectedFrame(src); }}
-                                        >
-                                            <img src={src} alt="frame" onError={() => setFailedFrames(prev => new Set([...prev, src]))} />
-                                        </div>
-                                    ))}
-                                </div>
-                                <p style={{ fontSize: 20, color: "#8c5b4a", marginTop: -8, background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, fontWeight: "bold" }}>← Geser untuk melihat lebih banyak →</p>
-                            </div>
-                        )
-                    ) : !selectedKeychain ? (
+                            <p style={{ fontSize: 20, color: "#8c5b4a", marginTop: -8, background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, fontWeight: "bold" }}>← Geser untuk melihat lebih banyak →</p>
+                        </div>
+                    )}
+
+                    {selectedFrame && !selectedKeychain && (
                         <div className="fade-in-up" style={S.col}>
                             <div style={{ fontSize: 46, color: "#8c5b4a", fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "10px 40px", borderRadius: 999, backdropFilter: "blur(10px)", boxShadow: "0 8px 24px rgba(0,0,0,0.1)" }}>Pilih keychain frame</div>
                             <div className="frame-carousel" style={{ width: "min(1400px, 92vw)" }}>
@@ -1287,147 +1289,140 @@ export default function PhotoBooth() {
                             </div>
                             <p style={{ fontSize: 20, color: "#8c5b4a", marginTop: -8, background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, fontWeight: "bold" }}>← Geser untuk melihat lebih banyak →</p>
                         </div>
-                    ) : (
-                        <div className="fade-in-up" style={{ display: "flex", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
-                            {/* LEFT: webcam */}
-                            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                {(mode === "photo" || showRetakeCamera) && (
-                                    <>
-                                        {frameLayout && frameLayout.slots && frameLayout.slots.length > 0 ? (
-                                            <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                                                <div style={{ position: "relative", height: "65vh", maxWidth: "100%", aspectRatio: `${frameLayout.w}/${frameLayout.slots[0].h}` }}>
-                                                    <Webcam
-                                                        audio={false} ref={webcamRef}
-                                                        screenshotFormat="image/jpeg"
-                                                        videoConstraints={{ width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" }}
-                                                        mirrored={true}
-                                                        style={{ width: "100%", height: "100%", borderRadius: 18, objectFit: "cover" }}
-                                                    />
-                                                    {countdown != null && <div style={S.countdownOverlay}>{countdown}</div>}
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div style={{ padding: "40px", fontSize: 18, color: "#8c5b4a", textAlign: "center" }}>
-                                                <p>⏳ Loading frame layout...</p>
-                                                <div style={{ fontSize: 14, color: "#b08a80", marginTop: 10 }}>
-                                                    Pastikan frame image ter-load dengan baik
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div style={{ marginTop: 20, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
-                                            {canTakePhoto && sessionStarted && (
-                                                <button className="pb-btn" style={S.button} onClick={capturePhoto}>
-                                                    {showRetakeCamera ? "Ambil Foto" : "Take Photo"}
-                                                </button>
-                                            )}
-                                            {photoCount > 0 && mode === "photo" && (
-                                                <button className="pb-btn" style={{ ...S.button, fontSize: 24, padding: "8px 16px" }} onClick={redoLastPhoto}>⟳</button>
-                                            )}
-                                            {showRetakeButton && mode === "photo" && (
-                                                <button className="pb-btn" style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>Retake selected</button>
-                                            )}
-                                        </div>
-                                    </>
-                                )}
-                                {mode === "decorate" && !showRetakeCamera && (
-                                    <div style={S.col}>
-                                        {activeStampSrc ? (
-                                            <div className="stamp-active" style={{ textAlign: "center", marginBottom: 30, background: "linear-gradient(135deg,#fff0f4,#ffe4ee)", padding: 24, borderRadius: 24, border: "2px solid #ff7aa2", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                                <h3 style={{ margin: "0 0 10px 0", color: "#ff7aa2", fontSize: 22 }}>Tap foto untuk menempel</h3>
-                                                <img src={activeStampSrc} alt="Active Stamp" style={{ width: 90, height: 90, objectFit: "contain", marginBottom: 14 }} />
-                                                <br />
-                                                <button className="pb-btn"
-                                                    style={{ ...S.button, fontSize: 20, padding: "10px 24px", marginTop: 8 }}
-                                                    onClick={() => setActiveStampSrc(null)}
-                                                >
-                                                    Selesai Menempel
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div style={{ textAlign: "center", marginBottom: 30 }}>
-                                                <button className="pb-btn"
-                                                    style={{ ...S.button, background: "linear-gradient(135deg,#ff7aa2,#ff99be)", color: "white", borderColor: "#ff7aa2", fontSize: 28, padding: "18px 36px", boxShadow: "0 12px 28px rgba(255,122,162,0.35)", borderRadius: 18 }}
-                                                    onClick={() => { setSelectedStickerIndex(null); setShowStickerModal(true); }}
-                                                >
-                                                    Tambahkan Stiker
-                                                </button>
-                                            </div>
-                                        )}
+                    )}
 
-                                        {!activeStampSrc && selectedStickerIndex !== null ? (
-                                            <div style={{ textAlign: "center", marginTop: 10 }}>
-                                                <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12, fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, display: "inline-block" }}>Stiker terpilih</div>
-                                                <br />
-                                                <button className="pb-btn" style={{ ...S.button, background: "#ff6b6b", color: "white", borderColor: "#ff6b6b", fontSize: 20, padding: "10px 20px" }} onClick={deleteSelectedSticker}>Hapus Stiker</button>
-                                            </div>
-                                        ) : showRetakeButton ? (
-                                            <div style={{ textAlign: "center" }}>
-                                                <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12, fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, display: "inline-block" }}>Foto dipilih — mau diganti?</div>
-                                                <br />
-                                                <button className="pb-btn" style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>Retake foto ini</button>
-                                            </div>
-                                        ) : (
-                                            <div style={{ fontSize: 18, color: "#8c5b4a", fontWeight: "bold", textAlign: "center", maxWidth: 320, background: "rgba(255,255,255,0.85)", padding: "10px 20px", borderRadius: 20, lineHeight: 1.4 }}>
-                                                Klik foto atau stiker di strip untuk memilih/geser
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                    {/* Always mount the photo/decorate section, but hide it if not active */}
+                    <div className="fade-in-up" style={{ display: (selectedFrame && selectedKeychain) ? "flex" : "none", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
+                        {/* LEFT: webcam */}
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                            {/* Kamera selalu di-mount agar selalu menyala */}
+                            <div style={{ width: "100%", display: (mode === "photo" || showRetakeCamera) ? "flex" : "none", justifyContent: "center" }}>
+                                <div style={{ position: "relative", height: "65vh", maxWidth: "100%", aspectRatio: frameLayout && frameLayout.slots && frameLayout.slots.length > 0 ? `${frameLayout.w}/${frameLayout.slots[0].h}` : "3/4" }}>
+                                    <Webcam
+                                        audio={false} ref={webcamRef}
+                                        screenshotFormat="image/jpeg"
+                                        videoConstraints={{ width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" }}
+                                        mirrored={true}
+                                        style={{ width: "100%", height: "100%", borderRadius: 18, objectFit: "cover" }}
+                                    />
+                                    {countdown != null && <div style={S.countdownOverlay}>{countdown}</div>}
+                                </div>
+                            </div>
+                            
+                            {(mode === "photo" || showRetakeCamera) && (
+                                <div style={{ marginTop: 20, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+                                    {canTakePhoto && sessionStarted && (
+                                        <button className="pb-btn" style={S.button} onClick={capturePhoto}>
+                                            {showRetakeCamera ? "Ambil Foto" : "Take Photo"}
+                                        </button>
+                                    )}
+                                    {photoCount > 0 && mode === "photo" && (
+                                        <button className="pb-btn" style={{ ...S.button, fontSize: 24, padding: "8px 16px" }} onClick={redoLastPhoto}>⟳</button>
+                                    )}
+                                    {showRetakeButton && mode === "photo" && (
+                                        <button className="pb-btn" style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>Retake selected</button>
+                                    )}
+                                </div>
+                            )}
+
+                            {mode === "decorate" && !showRetakeCamera && (
+                                <div style={S.col}>
+                                    {activeStampSrc ? (
+                                        <div className="stamp-active" style={{ textAlign: "center", marginBottom: 30, background: "linear-gradient(135deg,#fff0f4,#ffe4ee)", padding: 24, borderRadius: 24, border: "2px solid #ff7aa2", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                            <h3 style={{ margin: "0 0 10px 0", color: "#ff7aa2", fontSize: 22 }}>Tap foto untuk menempel</h3>
+                                            <img src={activeStampSrc} alt="Active Stamp" style={{ width: 90, height: 90, objectFit: "contain", marginBottom: 14 }} />
+                                            <br />
+                                            <button className="pb-btn"
+                                                style={{ ...S.button, fontSize: 20, padding: "10px 24px", marginTop: 8 }}
+                                                onClick={() => setActiveStampSrc(null)}
+                                            >
+                                                Selesai Menempel
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div style={{ textAlign: "center", marginBottom: 30 }}>
+                                            <button className="pb-btn"
+                                                style={{ ...S.button, background: "linear-gradient(135deg,#ff7aa2,#ff99be)", color: "white", borderColor: "#ff7aa2", fontSize: 28, padding: "18px 36px", boxShadow: "0 12px 28px rgba(255,122,162,0.35)", borderRadius: 18 }}
+                                                onClick={() => { setSelectedStickerIndex(null); setShowStickerModal(true); }}
+                                            >
+                                                Tambahkan Stiker
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {!activeStampSrc && selectedStickerIndex !== null ? (
+                                        <div style={{ textAlign: "center", marginTop: 10 }}>
+                                            <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12, fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, display: "inline-block" }}>Stiker terpilih</div>
+                                            <br />
+                                            <button className="pb-btn" style={{ ...S.button, background: "#ff6b6b", color: "white", borderColor: "#ff6b6b", fontSize: 20, padding: "10px 20px" }} onClick={deleteSelectedSticker}>Hapus Stiker</button>
+                                        </div>
+                                    ) : showRetakeButton ? (
+                                        <div style={{ textAlign: "center" }}>
+                                            <div style={{ fontSize: 20, color: "#8c5b4a", marginBottom: 12, fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "6px 20px", borderRadius: 999, display: "inline-block" }}>Foto dipilih — mau diganti?</div>
+                                            <br />
+                                            <button className="pb-btn" style={{ ...S.button, background: "#fff0f4" }} onClick={retakeSelectedPhoto}>Retake foto ini</button>
+                                        </div>
+                                    ) : (
+                                        <div style={{ fontSize: 18, color: "#8c5b4a", fontWeight: "bold", textAlign: "center", maxWidth: 320, background: "rgba(255,255,255,0.85)", padding: "10px 20px", borderRadius: 20, lineHeight: 1.4 }}>
+                                            Klik foto atau stiker di strip untuk memilih/geser
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* RIGHT: preview strip */}
+                        <div style={{ display: "flex", flexDirection: "row", gap: 20, alignItems: "flex-start", flexShrink: 0 }}>
+                            {/* Foto strip — aspect ratio 1200:3000 = 2:5 */}
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                <div style={S.previewLabel}>Foto</div>
+                                <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
+                                    <canvas ref={canvasRef}
+                                        style={{ height: "65vh", width: "auto", display: mode === "decorate" ? "none" : "block", cursor: "default" }}
+                                        onMouseDown={mode === "photo" ? handleMouseDown : undefined}
+                                        onMouseMove={mode === "photo" ? handleMouseMove : undefined}
+                                        onMouseUp={mode === "photo" ? handleMouseUp : undefined}
+                                    />
+                                    {mode === "decorate" && (
+                                        <canvas ref={decorateCanvasRef}
+                                            style={{ height: "65vh", width: "auto", display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
+                                            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
+                                        />
+                                    )}
+                                </div>
                             </div>
 
-                            {/* RIGHT: preview strip */}
-                            <div style={{ display: "flex", flexDirection: "row", gap: 20, alignItems: "flex-start", flexShrink: 0 }}>
-                                {/* Foto strip — aspect ratio 1200:3000 = 2:5 */}
+                            {/* Video preview */}
+                            {allPhotosTaken && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                    <div style={S.previewLabel}>Foto</div>
-                                    <div style={{ display: "flex", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", borderRadius: 14, overflow: "hidden", outline: showRetakeButton ? "3px solid #ff7aa2" : "none" }}>
-                                        <canvas ref={canvasRef}
-                                            style={{ height: "65vh", width: "auto", display: mode === "decorate" ? "none" : "block", cursor: "default" }}
-                                            onMouseDown={mode === "photo" ? handleMouseDown : undefined}
-                                            onMouseMove={mode === "photo" ? handleMouseMove : undefined}
-                                            onMouseUp={mode === "photo" ? handleMouseUp : undefined}
-                                        />
-                                        {mode === "decorate" && (
-                                            <canvas ref={decorateCanvasRef}
-                                                style={{ height: "65vh", width: "auto", display: "block", cursor: activeStampSrc ? "crosshair" : "pointer" }}
-                                                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
-                                            />
-                                        )}
+                                    <div style={S.previewLabel}>Video</div>
+                                    <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                        <canvas ref={videoPreviewCanvasRef} style={{ height: "100%", width: "auto", display: "block" }} />
                                     </div>
                                 </div>
+                            )}
 
-                                {/* Video preview */}
-                                {allPhotosTaken && (
-                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                        <div style={S.previewLabel}>Video</div>
-                                        <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                            <canvas ref={videoPreviewCanvasRef} style={{ height: "100%", width: "auto", display: "block" }} />
-                                        </div>
+                            {/* Keychain preview */}
+                            {allPhotosTaken && (
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                    <div style={S.previewLabel}>Keychain</div>
+                                    <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
+                                        <canvas ref={keychainCanvasRef} style={{ height: "100%", width: "auto", display: "block" }} />
                                     </div>
-                                )}
+                                </div>
+                            )}
 
-                                {/* Keychain preview */}
-                                {allPhotosTaken && (
-                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                        <div style={S.previewLabel}>Keychain</div>
-                                        <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
-                                            <canvas ref={keychainCanvasRef} style={{ height: "100%", width: "auto", display: "block" }} />
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Finish */}
-                                {mode === "decorate" && allPhotosTaken && (
-                                    <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-                                        <button className="pb-btn" style={{ ...S.button, fontSize: 30, padding: "18px 38px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer", background: isSaving ? "#f0f0f0" : "linear-gradient(135deg,#ff7aa2,#ff99be)", color: isSaving ? "#8c5b4a" : "white", borderColor: "#ff7aa2", boxShadow: "0 12px 28px rgba(255,122,162,0.3)", borderRadius: 18 }}
-                                            onClick={handleFinalSave} disabled={isSaving}>
-                                            {isSaving ? "Saving..." : "Finish & Simpan"}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
+                            {/* Finish */}
+                            {mode === "decorate" && allPhotosTaken && (
+                                <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
+                                    <button className="pb-btn" style={{ ...S.button, fontSize: 30, padding: "18px 38px", opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer", background: isSaving ? "#f0f0f0" : "linear-gradient(135deg,#ff7aa2,#ff99be)", color: isSaving ? "#8c5b4a" : "white", borderColor: "#ff7aa2", boxShadow: "0 12px 28px rgba(255,122,162,0.3)", borderRadius: 18 }}
+                                        onClick={handleFinalSave} disabled={isSaving}>
+                                        {isSaving ? "Saving..." : "Finish & Simpan"}
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 {/* MODAL: Sticker Selection */}
