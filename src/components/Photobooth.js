@@ -12,14 +12,19 @@ const OLD_FRAME_OFFSET_Y = (3576 - 3000) / 2; // 288
 
 
 
-// ─── FRAME OPTIONS (Dynamic: 1..10, tampil seadanya) ──────────────────────────
-const MAX_FRAMES = 10;
-const MAX_KEYCHAINS = 10;
-const MAX_STICKERS = 15;
+// --- FRAME OPTIONS (Dynamic: unlimited, auto-detect berdasarkan file yang ada) ----
+// Generate array unlimited sampai index 100, file tidak ada akan di-filter otomatis
+const generateAssetArray = (folder, prefix, maxAttempts = 100) => {
+    const assets = [];
+    for (let i = 1; i <= maxAttempts; i++) {
+        assets.push(`/assets/${folder}/${prefix}-${i}.png`);
+    }
+    return assets;
+};
 
-const FRAME_OPTIONS = Array.from({ length: MAX_FRAMES }, (_, i) => `/assets/frames/frame-${i + 1}.png`);
-const KEYCHAIN_OPTIONS = Array.from({ length: MAX_KEYCHAINS }, (_, i) => `/assets/keychain/keychain-${i + 1}.png`);
-const STICKER_OPTIONS = Array.from({ length: MAX_STICKERS }, (_, i) => `/assets/stickers/sticker-${i + 1}.png`);
+const FRAME_OPTIONS = generateAssetArray('frames', 'frame', 100);
+const KEYCHAIN_OPTIONS = generateAssetArray('keychain', 'keychain', 100);
+const STICKER_OPTIONS = generateAssetArray('stickers', 'sticker', 100);
 
 // ─── BACKGROUND OPTIONS ───────────────────────────────────────────────────────
 const BG_WELCOME = "/assets/backgrounds/bg-welcome.png";
