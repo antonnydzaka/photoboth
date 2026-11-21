@@ -80,7 +80,7 @@ export default function PhotoBooth() {
 
     const [selectedFrame, setSelectedFrame] = useState(null);
     const [selectedKeychain, setSelectedKeychain] = useState(null);
-    const [mode, setMode] = useState("photo");
+    const [mode, setMode] = useState("photo"); // "photo" | "decorate" | "keychain-select"
     const [sessionStarted, setSessionStarted] = useState(false);
     const [sessionTimeLeft, setSessionTimeLeft] = useState(180);
     const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
@@ -456,7 +456,7 @@ export default function PhotoBooth() {
         // Utamakan container mp4 murni jika browser mendukung, kalau tidak fallback ke webm dengan H.264 (hardware accelerated)
         const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
         const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
-        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15_000_000 });
         recordedChunksRef.current = [];
         // timeslice dihapus agar tidak patah-patah (hanya merekam satu chunk besar)
         recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
@@ -530,10 +530,9 @@ export default function PhotoBooth() {
     };
 
     const handleBack = () => {
-        if (selectedKeychain) {
-            setSelectedKeychain(null);
-            setCanTakePhoto(false);
-        } else {
+        if (mode === "keychain-select") {
+            setMode("decorate");
+        } else if (selectedFrame && countdown === null && mode === "photo") {
             setSelectedFrame(null); setMode("photo");
             setCanTakePhoto(false); setSelectedPhotoIndex(null); setRetakeSlotIndex(null);
         }
@@ -793,7 +792,7 @@ export default function PhotoBooth() {
         if (!frameImgRef.current) return;
         stopVideoPreview();
         const frameImg = frameImgRef.current;
-        const PREVIEW_SCALE = 0.8; // HD preview
+        const PREVIEW_SCALE = 1.0; // Full resolution preview
         const cW = FRAME_W * PREVIEW_SCALE, cH = FRAME_H * PREVIEW_SCALE;
 
         const previewCanvas = videoPreviewCanvasRef.current;
@@ -946,7 +945,7 @@ export default function PhotoBooth() {
             try {
                 if (!frameImgRef.current) { resolve(null); return; }
                 const frameImg = frameImgRef.current;
-                const SCALE = 0.8; // HD export
+                const SCALE = 1.0; // Full resolution export
                 const cW = FRAME_W * SCALE, cH = FRAME_H * SCALE;
                 const photosSnapshot = photos.slice();
 
@@ -1022,7 +1021,7 @@ export default function PhotoBooth() {
                 const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
                 const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
                 const stream = rc.captureStream(30);
-                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15_000_000 });
                 const chunks = [];
                 mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
                 mr.onstop = () => {
@@ -1036,7 +1035,7 @@ export default function PhotoBooth() {
                 };
 
                 renderFreeze();
-                mr.start(100); // timeslice 100ms for smoother chunks
+                mr.start(); // No timeslice = single chunk, smoother
 
                 let currentPhase = 0;
                 let lastTime = 0;
@@ -1048,7 +1047,7 @@ export default function PhotoBooth() {
                     requestAnimationFrame(renderLoop);
 
                     // Cap at 30fps
-                    if (time - lastTime < 33) return;
+                    if (time - lastTime < 33) return; // Cap at 30fps
                     lastTime = time;
 
                     const elapsed = time - startTime;
@@ -1165,7 +1164,7 @@ export default function PhotoBooth() {
         if (photoBlob) await saveFile(`${fileBase}.jpg`, photoBlob);
         setSaveProgress(35);
 
-        const keychainBlob = await createCombinedKeychainBlob();
+        const keychainBlob = selectedKeychain ? await createCombinedKeychainBlob() : null;
         if (keychainBlob) await saveFile(`${fileBase}-keychain.jpg`, keychainBlob);
         setSaveProgress(60);
 
@@ -1191,9 +1190,10 @@ export default function PhotoBooth() {
 
     // ─── Background helper (crossfade transition) ─────────────────────────────
     const getCurrentBgUrl = () => {
-        if (sessionStarted && (!selectedFrame || !selectedKeychain)) return BG_CHOOSE;
-        if (selectedFrame && selectedKeychain && mode === "decorate") return BG_DECORATE;
-        if (selectedFrame && selectedKeychain && mode === "photo") return BG_SMILE;
+        if (sessionStarted && !selectedFrame) return BG_CHOOSE;
+        if (selectedFrame && mode === "decorate") return BG_DECORATE;
+        if (selectedFrame && mode === "photo") return BG_SMILE;
+        if (mode === "keychain-select") return BG_CHOOSE;
         return BG_WELCOME;
     };
 
@@ -1234,14 +1234,15 @@ export default function PhotoBooth() {
             <div style={{ ...S.centerCol, minHeight: "100vh", width: "100%", justifyContent: "center", padding: "20px 0", position: "relative", zIndex: 1 }}>
                 {/* TOP BAR */}
                 <div style={S.topBar}>
-                    {selectedFrame && !sessionStarted && (
+                    {((selectedFrame && !sessionStarted) || (mode === "photo" && selectedFrame && countdown === null) || mode === "keychain-select") && (
                         <button className="pb-btn" style={{ ...S.button, position: "absolute", left: 0, top: 14, height: 50, padding: "0 22px" }} onClick={handleBack}>
                             ← Back
                         </button>
                     )}
                     {sessionStarted && <div style={S.timerBadge}>{formatTime(sessionTimeLeft)}</div>}
                     <h1 style={S.titleBar}>
-                        {(!selectedFrame || !selectedKeychain) ? "Welcome"
+                        {!selectedFrame ? "Welcome"
+                            : mode === "keychain-select" ? "Pilih Keychain"
                             : mode === "photo" ? "Smile :)"
                                 : "Let's Decorate"}
                     </h1>
@@ -1263,7 +1264,7 @@ export default function PhotoBooth() {
                                     <div
                                         key={src}
                                         className={`frame-carousel-item${selectedFrame === src ? " active" : ""}`}
-                                        onClick={() => { setSelectedFrame(src); }}
+                                        onClick={() => { setSelectedFrame(src); setCanTakePhoto(true); }}
                                     >
                                         <img src={src} alt="frame" onError={() => setFailedFrames(prev => new Set([...prev, src]))} />
                                     </div>
@@ -1273,7 +1274,7 @@ export default function PhotoBooth() {
                         </div>
                     )}
 
-                    {selectedFrame && !selectedKeychain && (
+                    {mode === "keychain-select" && (
                         <div className="fade-in-up" style={S.col}>
                             <div style={{ fontSize: 46, color: "#8c5b4a", fontWeight: "bold", background: "rgba(255,255,255,0.85)", padding: "10px 40px", borderRadius: 999, backdropFilter: "blur(10px)", boxShadow: "0 8px 24px rgba(0,0,0,0.1)" }}>Pilih keychain frame</div>
                             <div className="frame-carousel" style={{ width: "min(1400px, 92vw)" }}>
@@ -1281,7 +1282,7 @@ export default function PhotoBooth() {
                                     <div
                                         key={src}
                                         className={`frame-carousel-item${selectedKeychain === src ? " active" : ""}`}
-                                        onClick={() => { setSelectedKeychain(src); setCanTakePhoto(true); }}
+                                        onClick={() => { setSelectedKeychain(src); setMode("decorate"); }}
                                     >
                                         <img src={src} alt="keychain frame" onError={() => setFailedKeychains(prev => new Set([...prev, src]))} />
                                     </div>
@@ -1292,7 +1293,7 @@ export default function PhotoBooth() {
                     )}
 
                     {/* Always mount the photo/decorate section, but hide it if not active */}
-                    <div className="fade-in-up" style={{ display: (selectedFrame && selectedKeychain) ? "flex" : "none", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
+                    <div className="fade-in-up" style={{ display: selectedFrame && mode !== "keychain-select" ? "flex" : "none", gap: 40, justifyContent: "center", alignItems: "flex-start", width: "100%" }}>
                         {/* LEFT: webcam */}
                         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
                             {/* Kamera selalu di-mount agar selalu menyala */}
@@ -1301,7 +1302,7 @@ export default function PhotoBooth() {
                                     <Webcam
                                         audio={false} ref={webcamRef}
                                         screenshotFormat="image/jpeg"
-                                        videoConstraints={{ width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" }}
+                                        videoConstraints={{ width: { ideal: 3840 }, height: { ideal: 2160 }, facingMode: "user" }}
                                         mirrored={true}
                                         style={{ width: "100%", height: "100%", borderRadius: 18, objectFit: "cover" }}
                                     />
@@ -1347,6 +1348,14 @@ export default function PhotoBooth() {
                                             >
                                                 Tambahkan Stiker
                                             </button>
+                                            {allPhotosTaken && !selectedKeychain && (
+                                                <button className="pb-btn"
+                                                    style={{ ...S.button, background: "linear-gradient(135deg,#ffb347,#ffcc70)", color: "white", borderColor: "#ffb347", fontSize: 28, padding: "18px 36px", boxShadow: "0 12px 28px rgba(255,183,71,0.35)", borderRadius: 18, marginTop: 14 }}
+                                                    onClick={() => setMode("keychain-select")}
+                                                >
+                                                    Tambah Keychain
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 
@@ -1403,7 +1412,7 @@ export default function PhotoBooth() {
                             )}
 
                             {/* Keychain preview */}
-                            {allPhotosTaken && (
+                            {allPhotosTaken && selectedKeychain && (
                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                                     <div style={S.previewLabel}>Keychain</div>
                                     <div style={{ height: "65vh", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 30px rgba(255,122,162,0.25)" }}>
