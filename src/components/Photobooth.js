@@ -461,7 +461,7 @@ export default function PhotoBooth() {
         // Utamakan container mp4 murni jika browser mendukung, kalau tidak fallback ke webm dengan H.264 (hardware accelerated)
         const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
         const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
-        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15_000_000 });
+        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
         recordedChunksRef.current = [];
         // timeslice dihapus agar tidak patah-patah (hanya merekam satu chunk besar)
         recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
@@ -797,7 +797,7 @@ export default function PhotoBooth() {
         if (!frameImgRef.current) return;
         stopVideoPreview();
         const frameImg = frameImgRef.current;
-        const PREVIEW_SCALE = 1.0; // Full resolution preview
+        const PREVIEW_SCALE = 0.8; // HD preview
         const cW = FRAME_W * PREVIEW_SCALE, cH = FRAME_H * PREVIEW_SCALE;
 
         const previewCanvas = videoPreviewCanvasRef.current;
@@ -950,7 +950,7 @@ export default function PhotoBooth() {
             try {
                 if (!frameImgRef.current) { resolve(null); return; }
                 const frameImg = frameImgRef.current;
-                const SCALE = 1.0; // Full resolution export
+                const SCALE = 0.8; // HD export
                 const cW = FRAME_W * SCALE, cH = FRAME_H * SCALE;
                 const photosSnapshot = photos.slice();
 
@@ -1026,7 +1026,7 @@ export default function PhotoBooth() {
                 const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=h264", "video/webm"];
                 const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "video/webm";
                 const stream = rc.captureStream(30);
-                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15_000_000 });
+                const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
                 const chunks = [];
                 mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
                 mr.onstop = () => {
