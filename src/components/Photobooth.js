@@ -1307,7 +1307,7 @@ export default function PhotoBooth() {
                                     <Webcam
                                         audio={false} ref={webcamRef}
                                         screenshotFormat="image/jpeg"
-                                        videoConstraints={{ width: { ideal: 3840 }, height: { ideal: 2160 }, facingMode: "user" }}
+                                        videoConstraints={{ width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" }}
                                         mirrored={true}
                                         style={{ width: "100%", height: "100%", borderRadius: 18, objectFit: "cover" }}
                                     />
